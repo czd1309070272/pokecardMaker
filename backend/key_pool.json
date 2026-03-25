@@ -1,0 +1,22 @@
+{
+  "key_pool": [
+    {
+      "provider": "dashscope",
+      "api_key": "sk-024109b63efb46348824ec2659653dbe",
+      "model": "wanx2.1-t2i-turbo",
+      "limit": 2
+    },
+    {
+      "provider": "dashscope",
+      "api_key": "sk-f169497f5359446ea04c907785b6b588",
+      "model": "wanx2.1-t2i-turbo",
+      "limit": 2
+    },
+    {
+      "provider": "openrouter",
+      "api_key": "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",
+      "model": "google/gemini-2.5-flash-image-preview",
+      "limit": 20
+    }
+  ]
+}

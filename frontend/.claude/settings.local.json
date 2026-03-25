@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /i/pokemon -maxdepth 3 -type f \\\\\\(-name *.css -o -name *.scss -o -name *.module.* \\\\\\))",
+      "Bash(ls -la /i/pokemon/services/*.py)",
+      "Bash(cd /i)",
+      "Bash(npx create-expo-app@latest pokemon-mobile --template blank-typescript)",
+      "Bash(npm install:*)",
+      "Bash(npm list:*)",
+      "Bash(npx expo:*)",
+      "Bash(taskkill /F /IM node.exe)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill:*)",
+      "Bash(cmd.exe /c \"taskkill /PID 4092 /F\")",
+      "Bash(powershell -Command \"Stop-Process -Id 4092 -Force\")",
+      "Bash(cd:*)",
+      "Read(//i//**)",
+      "Bash(rm -rf pokemon-mobile)",
+      "Bash(npx create-expo-app@54 pokemon-mobile --template blank-typescript)",
+      "WebSearch",
+      "Bash(cp:*)",
+      "Bash(npm start:*)",
+      "Bash(findstr :8081)",
+      "Bash(rm -rf /i/pokemon/pokemon-mobile/src/components/card/layouts/*.tsx)",
+      "Bash(rm -rf /i/pokemon/pokemon-mobile/src/components/card/parts/*.tsx)",
+      "Bash(mkdir -p pokemon-native)",
+      "Read(//i/pokemon-native/**)",
+      "Bash(npx create-expo-app@latest . --template blank-typescript)",
+      "Bash(ls -la /i/pokemon-native/app/\\\\\\(tabs\\\\\\)/)",
+      "Bash(cmd //c taskkill //PID 35924 //F)",
+      "Bash(ls:*)",
+      "Bash(npm run:*)",
+      "Bash(node -e \"require\\(''./lib/translations.ts''\\)\")",
+      "Bash(node:*)",
+      "Bash(iconv -f UTF-8 -t UTF-8 \"I:\\\\pokemon\\\\lib\\\\translations.ts\")",
+      "Bash(python3:*)",
+      "Bash(python:*)",
+      "Bash(git checkout:*)"
+    ]
+  }
+}
