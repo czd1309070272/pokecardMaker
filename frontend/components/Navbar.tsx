@@ -3,8 +3,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Logo, ChevronDownIcon, CartIcon, UserIcon, DiscordIcon, PrinterIcon, StickerIcon, TranslateIcon, SwordsIcon, MagicWandIcon, GlobeIcon, GridIcon, CoinIcon, GavelIcon } from './Icons';
 import { User } from '../types';
 import { SpotlightCard } from './Effects';
-import { supabase } from '../lib/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
+import { logout } from '../services/authService';
 
 interface NavbarProps {
     currentView: 'create' | 'browse' | 'cart' | 'profile' | 'arena' | 'appraiser' | 'recharge';
@@ -12,9 +12,10 @@ interface NavbarProps {
     cartCount: number;
     user: User | null;
     onLoginClick: () => void;
+    onLogout: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, cartCount, user, onLoginClick }) => {
+export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, cartCount, user, onLoginClick, onLogout }) => {
   const [isMoreOpen, setIsMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
   const { t, language, setLanguage } = useLanguage();
@@ -40,8 +41,8 @@ export const Navbar: React.FC<NavbarProps> = ({ currentView, setView, cartCount,
   };
 
   const handleSignOut = async () => {
-      await supabase.auth.signOut();
-      // App.tsx listener will handle state update
+      logout();
+      onLogout();
       setIsMoreOpen(false);
   };
 

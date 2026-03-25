@@ -10,6 +10,7 @@ export interface Attack {
 }
 
 export interface User {
+    id?: number;
     email: string;
     name: string;
     created?: string;

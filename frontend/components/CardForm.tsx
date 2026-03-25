@@ -30,12 +30,13 @@ import { FormCombat } from './card-form/FormCombat';
 import { FormStats } from './card-form/FormStats';
 import { FormDetail } from './card-form/FormDetail';
 import { useCardDownload } from '../hooks/useCardDownload';
+import { ActionDialog, ActionDialogOption } from './ActionDialog';
 
 interface CardFormProps {
   data: CardData;
   onChange: (data: CardData) => void;
   onAddToCart: (card: CardData) => void;
-  onSave: (card: CardData) => void;
+  onSave: (card: CardData) => Promise<void>;
   onPublish: (card: CardData) => void;
   addNotification: (type: 'success' | 'error' | 'info', message: string) => void;
   user: User | null;
@@ -72,6 +73,8 @@ export const CardForm: React.FC<CardFormProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const [cartBurst, setCartBurst] = useState(0);
+  const [clearDialogOptions, setClearDialogOptions] = useState<ActionDialogOption[]>([]);
+  const [isClearDialogOpen, setIsClearDialogOpen] = useState(false);
   
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const imageCache = useRef<Record<string, string | undefined>>({});
@@ -108,11 +111,24 @@ export const CardForm: React.FC<CardFormProps> = ({
   };
 
   const handleClear = useCallback(() => {
-    if (window.confirm("Are you sure you want to clear all data?")) {
-        imageCache.current = {}; 
-        onChange({ ...INITIAL_CARD_DATA, attacks: [] }); 
-        addNotification('info', t('msg.cleared'));
-    }
+    setClearDialogOptions([
+        {
+            label: t('dialog.clear_confirm'),
+            variant: 'danger',
+            onClick: () => {
+                imageCache.current = {};
+                onChange({ ...INITIAL_CARD_DATA, attacks: [] });
+                addNotification('info', t('msg.cleared'));
+                setIsClearDialogOpen(false);
+            },
+        },
+        {
+            label: t('dialog.keep_editing'),
+            variant: 'secondary',
+            onClick: () => setIsClearDialogOpen(false),
+        },
+    ]);
+    setIsClearDialogOpen(true);
   }, [onChange, addNotification, t]);
 
   const handleJsonExport = useCallback(() => {
@@ -184,7 +200,7 @@ export const CardForm: React.FC<CardFormProps> = ({
              {/* Action Buttons Row: Flex-1 on mobile for bigger targets */}
              <div className="flex justify-center gap-3 mb-2 lg:mb-0 lg:gap-2">
                 <button 
-                    onClick={() => onSave(data)}
+                    onClick={() => void onSave(data)}
                     className="flex-1 lg:flex-none lg:aspect-square bg-[#161b22] hover:bg-[#21262d] text-green-400 border border-gray-700 hover:border-green-500/50 py-3 lg:p-2.5 rounded-lg font-bold text-xs flex items-center justify-center transition-all hover:-translate-y-0.5 active:translate-y-0 shadow-sm"
                     title={t('btn.save')}
                 >
@@ -258,6 +274,14 @@ export const CardForm: React.FC<CardFormProps> = ({
   );
 
   return (
+    <>
+    <ActionDialog
+        isOpen={isClearDialogOpen}
+        title={t('dialog.clear_card_title')}
+        description={t('dialog.clear_card_desc')}
+        options={clearDialogOptions}
+        onClose={() => setIsClearDialogOpen(false)}
+    />
     <fieldset disabled={isGeneratingImage} className="flex flex-col lg:flex-row h-full bg-[#0f1216] text-gray-300 relative disabled:opacity-70 disabled:pointer-events-none transition-opacity">
       
       {/* Sidebar / Tabs */}
@@ -368,5 +392,6 @@ export const CardForm: React.FC<CardFormProps> = ({
         </div>
       </div>
     </fieldset>
+    </>
   );
 };

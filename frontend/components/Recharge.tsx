@@ -7,7 +7,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 interface RechargeProps {
     user: User | null;
     onBack: () => void;
-    onRecharge: (amount: number) => void;
+    onRecharge: (amount: number) => Promise<boolean>;
 }
 
 export const Recharge: React.FC<RechargeProps> = ({ user, onBack, onRecharge }) => {
@@ -38,15 +38,23 @@ export const Recharge: React.FC<RechargeProps> = ({ user, onBack, onRecharge }) 
         setShowPaymentModal(true);
     };
 
-    const confirmPayment = () => {
+    const confirmPayment = async () => {
         setIsProcessing(true);
         
         // [Mock Payment Process]
         setTimeout(() => {
-            setIsProcessing(false);
-            setShowPaymentModal(false);
-            onRecharge(coinsReceived); // Optimistic UI update
-            onBack();
+            onRecharge(coinsReceived)
+                .then((success) => {
+                    setIsProcessing(false);
+                    if (!success) {
+                        return;
+                    }
+                    setShowPaymentModal(false);
+                    onBack();
+                })
+                .catch(() => {
+                    setIsProcessing(false);
+                });
         }, 1500);
     };
 

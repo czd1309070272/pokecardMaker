@@ -12,10 +12,13 @@ import { Appraiser } from './components/Appraiser';
 import { Recharge } from './components/Recharge';
 import { TiltCard } from './components/TiltCard';
 import { ToastContainer } from './components/Toast';
+import { ActionDialog, ActionDialogOption } from './components/ActionDialog';
 import { CardData, INITIAL_CARD_DATA, User, Notification, ElementType, Subtype, TrainerType, HoloPattern, Supertype } from './types';
-import { supabase } from './lib/supabase';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { UserIcon } from './components/Icons';
+import { restoreCurrentUser } from './services/authService';
+import { deleteCardFromServer, fetchMyCards, saveCardToServer, updateCardOnServer } from './services/cardsService';
+import { applyCoinsToUser, rechargeCoins, spendCoins } from './services/walletService';
 
 // [待删除 Mock 数据] 后端接入后，删除此静态数组，改由 API 获取
 const MOCK_CARDS_INITIAL: CardData[] = [
@@ -175,7 +178,27 @@ function AppContent() {
 
   // Notification State
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [actionDialog, setActionDialog] = useState<{
+    title: string;
+    description: string;
+    options: ActionDialogOption[];
+  } | null>(null);
   const { t } = useLanguage();
+
+  const refreshMyCards = async (targetUser?: User | null) => {
+      const activeUser = targetUser ?? user;
+      if (!activeUser) {
+          setMyCards([]);
+          return;
+      }
+
+      try {
+          const cards = await fetchMyCards();
+          setMyCards(cards);
+      } catch {
+          setMyCards([]);
+      }
+  };
 
   /**
    * [后端接口规范] 初始化：获取广场公开卡牌 (Browse Feed)
@@ -225,77 +248,19 @@ function AppContent() {
 
   // Check for active session on load
   useEffect(() => {
-    // 1. Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        
-        /**
-         * [后端接口规范] 获取当前登录用户信息
-         * --------------------------------------------------------------
-         * 1. 接口方法: GET /api/users/me
-         * 2. 请求头: Authorization: Bearer <access_token>
-         * 3. 返回值:
-         *    {
-         *      "id": "uuid",
-         *      "email": "user@example.com",
-         *      "name": "UserName",
-         *      "coins": 1000, // 核心字段：金币余额
-         *      "avatar": "url"
-         *    }
-         */
-        setUser({
-            email: session.user.email || '',
-            name: session.user.user_metadata.full_name || session.user.user_metadata.name || 'User',
-            created: session.user.created_at,
-            coins: session.user.user_metadata.coins || 1000 
-        });
-
-        /**
-         * [后端接口规范] 获取当前用户的卡牌列表 (My Creations)
-         * --------------------------------------------------------------
-         * 1. 接口方法: GET /api/cards/me
-         * 
-         * 2. 请求参数:
-         *    - page: number
-         *    - limit: number
-         * 
-         * 3. 数据库交互 (SQL):
-         *    SELECT * FROM cards WHERE user_id = :currentUserId AND deleted_at IS NULL ORDER BY created_at DESC;
-         * 
-         * 4. 返回值:
-         *    {
-         *      "data": [ ...CardData[] ]
-         *    }
-         */
-        // [待删除 Mock] const myData = await fetch('/api/cards/me').then(res => res.json());
-        // setMyCards(myData.data);
-        console.log("Fetching user cards for:", session.user.email);
-      }
-    });
-
-    // 2. Listen for auth changes (login/logout/redirect)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-        if (session?.user) {
-            setUser({
-                email: session.user.email || '',
-                name: session.user.user_metadata.full_name || session.user.user_metadata.name || 'User',
-                created: session.user.created_at,
-                coins: session.user.user_metadata.coins || 1000
-            });
-            setIsLoginOpen(false); // Close modal if open
-            
-            // [后端接入点] 重新拉取用户卡牌
-            // fetchUserCards(session.user.id);
-        } else {
-             if (_event === 'SIGNED_OUT') {
-                 setUser(null);
-                 setMyCards([]); // 清空本地的用户卡牌缓存
-             }
+    restoreCurrentUser().then((restoredUser) => {
+        if (restoredUser) {
+            setUser(restoredUser);
+            console.log("Fetching user cards for:", restoredUser.email);
         }
     });
-
-    return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+      if (currentView === 'profile' && user) {
+          refreshMyCards();
+      }
+  }, [currentView, user]);
 
   const addNotification = (type: 'success' | 'error' | 'info', message: string) => {
       const id = Date.now().toString();
@@ -306,19 +271,26 @@ function AppContent() {
       setNotifications(prev => prev.filter(n => n.id !== id));
   };
 
-  // Fake login handler or manual trigger
-  const handleLogin = (email: string, name: string) => {
-      // [待删除 Mock 逻辑] 
-      // 真实环境应使用 supabase.auth.signInWithPassword 或 OAuth
-      setUser({
-          email,
-          name,
-          created: new Date().toISOString(),
-          coins: 1000 // Welcome bonus
-      });
+  const closeActionDialog = () => setActionDialog(null);
+
+  const openActionDialog = (config: {
+      title: string;
+      description: string;
+      options: ActionDialogOption[];
+  }) => setActionDialog(config);
+
+  const handleLogin = (nextUser: User) => {
+      setUser(nextUser);
       setIsLoginOpen(false);
-      
-      addNotification('success', `${t('auth.welcome')}, ${name}! +1000 Coins`);
+      refreshMyCards(nextUser);
+      addNotification('success', `${t('auth.welcome')}, ${nextUser.name}!`);
+  };
+
+  const handleLogout = () => {
+      setUser(null);
+      setMyCards([]);
+      setCurrentView('create');
+      addNotification('info', t('nav.signout'));
   };
 
   const handleLoginRequired = () => {
@@ -435,16 +407,53 @@ function AppContent() {
    *      "message": "Card created successfully"
    *    }
    */
-  const handleSaveCard = (card: CardData) => {
+  const handleSaveCard = async (card: CardData) => {
       if (!user) {
           handleLoginRequired();
           return;
       }
-      
-      // [待删除 Mock] 本地状态模拟保存
-      const newCard = { ...card, id: Date.now().toString() };
-      setMyCards(prev => [...prev, newCard]);
-      addNotification('success', t('msg.saved'));
+
+      const persistNewCard = async () => {
+          try {
+              const createPayload = { ...card, id: undefined };
+              const savedCard = await saveCardToServer(createPayload);
+              setMyCards(prev => [savedCard, ...prev]);
+              setCardData(savedCard);
+              addNotification('success', card.id ? t('msg.card_copied') : t('msg.saved'));
+          } catch (error: any) {
+              addNotification('error', error.message || 'Failed to save card.');
+          } finally {
+              closeActionDialog();
+          }
+      };
+
+      const persistOverwrite = async () => {
+          try {
+              const savedCard = await updateCardOnServer(card.id!, card);
+              setMyCards(prev => prev.map(existing => existing.id === card.id ? savedCard : existing));
+              setCardData(savedCard);
+              addNotification('success', t('msg.card_updated'));
+          } catch (error: any) {
+              addNotification('error', error.message || 'Failed to save card.');
+          } finally {
+              closeActionDialog();
+          }
+      };
+
+      if (card.id) {
+          openActionDialog({
+              title: t('dialog.save_changes_title'),
+              description: t('dialog.save_changes_desc'),
+              options: [
+                  { label: t('dialog.overwrite_card'), onClick: () => void persistOverwrite(), variant: 'primary' },
+                  { label: t('dialog.create_new_card'), onClick: () => void persistNewCard(), variant: 'secondary' },
+                  { label: t('dialog.cancel'), onClick: closeActionDialog, variant: 'secondary' },
+              ],
+          });
+          return;
+      }
+
+      await persistNewCard();
   };
 
   /**
@@ -455,10 +464,37 @@ function AppContent() {
    * 3. 数据库操作: UPDATE cards SET deleted_at = NOW() WHERE id = :id AND user_id = :currentUserId;
    * 4. 返回值: { "success": true }
    */
-  const handleDeleteCard = (id: string) => {
-      // [待删除 Mock]
-      setMyCards(prev => prev.filter(c => c.id !== id));
-      addNotification('info', 'Creation deleted.');
+  const handleDeleteCard = async (id: string) => {
+      if (!user) {
+          handleLoginRequired();
+          return;
+      }
+
+      openActionDialog({
+          title: t('dialog.delete_card_title'),
+          description: t('dialog.delete_card_desc'),
+          options: [
+              {
+                  label: t('dialog.delete_confirm'),
+                  variant: 'danger',
+                  onClick: async () => {
+                      try {
+                          await deleteCardFromServer(id);
+                          setMyCards(prev => prev.filter(c => c.id !== id));
+                          if (cardData.id === id) {
+                              setCardData(INITIAL_CARD_DATA);
+                          }
+                          addNotification('info', t('msg.card_deleted'));
+                      } catch (error: any) {
+                          addNotification('error', error.message || 'Failed to delete card.');
+                      } finally {
+                          closeActionDialog();
+                      }
+                  },
+              },
+              { label: t('dialog.keep_card'), onClick: closeActionDialog, variant: 'secondary' },
+          ],
+      });
   };
   
   /**
@@ -520,7 +556,7 @@ function AppContent() {
           return;
       }
       // 此处无需后端交互，仅前端状态复制
-      setCardData({ ...card, id: undefined });
+      setCardData({ ...card });
       setCurrentView('create');
       addNotification('info', 'Card loaded into editor.');
   };
@@ -552,23 +588,34 @@ function AppContent() {
    * 4. 返回值:
    *    { "success": true, "newBalance": 980 }
    */
-  const handleSpendCoins = (amount: number): boolean => {
+  const handleSpendCoins = async (amount: number): Promise<boolean> => {
       if (!user || (user.coins || 0) < amount) {
           addNotification('error', 'Not enough coins!');
           return false;
       }
-      
-      // [待删除 Mock]
-      setUser(prev => prev ? { ...prev, coins: (prev.coins || 0) - amount } : null);
-      addNotification('info', `Spent ${amount} coins.`);
-      return true;
+
+      try {
+          const nextCoins = await spendCoins(amount, 'ai_appraisal');
+          setUser(prev => applyCoinsToUser(prev, nextCoins));
+          addNotification('info', `Spent ${amount} coins.`);
+          return true;
+      } catch (error: any) {
+          addNotification('error', error.message || 'Failed to spend coins.');
+          return false;
+      }
   };
 
-  const handleRecharge = (amount: number) => {
-      if (!user) return;
-      // [待删除 Mock] 实际逻辑中，余额更新应通过 WebSocket 推送或轮询 /api/users/me 实现
-      setUser(prev => prev ? { ...prev, coins: (prev.coins || 0) + amount } : null);
-      addNotification('success', t('msg.recharge_success'));
+  const handleRecharge = async (amount: number): Promise<boolean> => {
+      if (!user) return false;
+      try {
+          const nextCoins = await rechargeCoins(amount, 'mock_payment_recharge');
+          setUser(prev => applyCoinsToUser(prev, nextCoins));
+          addNotification('success', t('msg.recharge_success'));
+          return true;
+      } catch (error: any) {
+          addNotification('error', error.message || 'Recharge failed.');
+          return false;
+      }
   }
 
   return (
@@ -579,12 +626,21 @@ function AppContent() {
         cartCount={cart.length}
         user={user}
         onLoginClick={() => setIsLoginOpen(true)}
+        onLogout={handleLogout}
       />
 
       <LoginModal 
         isOpen={isLoginOpen} 
         onClose={() => setIsLoginOpen(false)} 
         onLogin={handleLogin} 
+      />
+
+      <ActionDialog
+        isOpen={Boolean(actionDialog)}
+        title={actionDialog?.title || ''}
+        description={actionDialog?.description || ''}
+        options={actionDialog?.options || []}
+        onClose={closeActionDialog}
       />
 
       <ToastContainer notifications={notifications} removeNotification={removeNotification} />

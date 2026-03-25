@@ -10,7 +10,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 interface AppraiserProps {
     user: User | null;
     myCards: CardData[];
-    onSpendCoins: (amount: number) => boolean;
+    onSpendCoins: (amount: number) => Promise<boolean>;
     onLoginRequired: () => void;
 }
 
@@ -84,7 +84,7 @@ export const Appraiser: React.FC<AppraiserProps> = ({ user, myCards, onSpendCoin
         //    b) 后端验证金币 -> 扣费 -> 调用 AI -> 记录日志。
         //    c) 后端返回结果 { price, comment, remainingCoins }。
         
-        const success = onSpendCoins(COST); // [待删除] 前端模拟扣费
+        const success = await onSpendCoins(COST);
         if (!success) {
             setError("Transaction failed.");
             return;

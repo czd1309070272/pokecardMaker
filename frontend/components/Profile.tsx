@@ -15,7 +15,7 @@ interface ProfileProps {
     onPublishCard: (card: CardData) => void;
     onLoadCard: (card: CardData) => void;
     onCreateNew: () => void;
-    onDeleteCard: (id: string) => void;
+    onDeleteCard: (id: string) => void | Promise<void>;
     onRecharge: () => void;
 }
 
@@ -369,10 +369,8 @@ export const Profile: React.FC<ProfileProps> = ({
                                         </button>
                                         <button 
                                             onClick={() => { 
-                                                if(window.confirm('Are you sure you want to delete this card?')) {
-                                                    onDeleteCard(viewCard.id!); 
-                                                    setViewCard(null); 
-                                                }
+                                                onDeleteCard(viewCard.id!); 
+                                                setViewCard(null); 
                                             }}
                                             className="flex-1 bg-[#161b22] hover:bg-red-900/20 text-red-400 border border-red-900/50 font-bold py-3.5 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95"
                                         >

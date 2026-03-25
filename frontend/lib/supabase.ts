@@ -14,8 +14,8 @@ import { createClient } from '@supabase/supabase-js';
 // =========================================================================
 
 // Vite automatically exposes env variables starting with `VITE_` to `import.meta.env`
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://your-project-id.supabase.co'; 
-const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'your-anon-key-here'; 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://your-project-id.supabase.co';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'your-anon-key-here';
 
 if (SUPABASE_URL === 'https://your-project-id.supabase.co' || SUPABASE_ANON_KEY === 'your-anon-key-here') {
     console.warn("Supabase credentials are not configured. Please check your environment variables.");
