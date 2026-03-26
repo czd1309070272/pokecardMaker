@@ -1,17 +1,21 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { CardData, User, Supertype } from '../types';
+import { CardData, PurchasedPack, User } from '../types';
 import { CardPreview } from './CardPreview';
+import { PackCard } from './PackCard';
 import { TiltCard } from './TiltCard';
 import { UserIcon, GlobeIcon, EditIcon, EyeIcon, XIcon, TrashIcon, WalletIcon } from './Icons';
 import { useLanguage } from '../contexts/LanguageContext';
+import { getSubtypeLabel } from '../lib/subtype';
 
 interface ProfileProps {
     user: User | null;
     onLoginClick: () => void;
     savedCards?: CardData[];
-    globalCards?: CardData[];
-    onToggleLike: (id: string) => void;
+    likedCards?: CardData[];
+    purchasedPacks?: PurchasedPack[];
+    onRemoveFavorite: (id: string) => void;
+    onOpenPurchasedPack?: (pack: PurchasedPack) => void;
     onPublishCard: (card: CardData) => void;
     onLoadCard: (card: CardData) => void;
     onCreateNew: () => void;
@@ -59,21 +63,44 @@ const ResponsiveCardContainer: React.FC<{ children: React.ReactNode }> = ({ chil
     );
 };
 
-export const Profile: React.FC<ProfileProps> = ({ 
-    user, 
-    onLoginClick, 
-    savedCards = [], 
-    globalCards = [],
-    onToggleLike,
+export const Profile: React.FC<ProfileProps> = ({
+    user,
+    onLoginClick,
+    savedCards = [],
+    likedCards = [],
+    purchasedPacks = [],
+    onRemoveFavorite,
+    onOpenPurchasedPack,
     onPublishCard,
     onLoadCard,
     onCreateNew,
     onDeleteCard,
     onRecharge
 }) => {
-    const [activeTab, setActiveTab] = useState<'creations' | 'favorites'>('creations');
+    const [activeTab, setActiveTab] = useState<'creations' | 'favorites' | 'packs'>('creations');
     const [viewCard, setViewCard] = useState<CardData | null>(null);
-    const { t } = useLanguage();
+    const { t, language } = useLanguage();
+    const getSupertypeLabel = (supertype: CardData['supertype']) =>
+        supertype === 'Trainer'
+            ? t('supertype.trainer')
+            : supertype === 'Energy'
+                ? t('supertype.energy')
+                : t('supertype.pokemon');
+    const isPublishedCard = (card: CardData) => Boolean(card.isPublic || card.status === 'published' || card.publishedAt);
+    const isAppraisedCard = (card: CardData) => Boolean(card.appraisal?.price && card.appraisal?.comment);
+    const isDeletedCard = (card: CardData) => Boolean(card.isDeleted || card.deletedAt || card.status === 'deleted');
+    const isUnpublishedFavorite = (card: CardData) => activeTab === 'favorites' && !isDeletedCard(card) && !isPublishedCard(card);
+    const isUnavailableFavorite = (card: CardData) => activeTab === 'favorites' && (isDeletedCard(card) || isUnpublishedFavorite(card));
+    const getFavoriteStateLabel = (card: CardData) => {
+        if (isDeletedCard(card)) return t('card.deleted_badge');
+        if (isUnpublishedFavorite(card)) return t('card.unpublished_badge');
+        return null;
+    };
+    const getFavoriteStateNotice = (card: CardData) => {
+        if (isDeletedCard(card)) return t('favorites.deleted_notice');
+        if (isUnpublishedFavorite(card)) return t('favorites.unpublished_notice');
+        return null;
+    };
 
     if (!user) {
         return (
@@ -84,7 +111,7 @@ export const Profile: React.FC<ProfileProps> = ({
                     </div>
                     <h2 className="text-2xl font-bold text-white mb-2">{t('auth.signin_req')}</h2>
                     <p className="text-gray-400 mb-8">{t('auth.signin_desc')}</p>
-                    <button 
+                    <button
                         onClick={onLoginClick}
                         className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg shadow-lg transition-all"
                     >
@@ -98,7 +125,9 @@ export const Profile: React.FC<ProfileProps> = ({
     const displayCards = (() => {
         switch (activeTab) {
             case 'favorites':
-                return globalCards.filter(c => c.isLiked);
+                return likedCards;
+            case 'packs':
+                return [];
             case 'creations':
             default:
                 return savedCards;
@@ -131,7 +160,11 @@ export const Profile: React.FC<ProfileProps> = ({
                             </div>
                             <div className="bg-gray-800 px-3 py-1.5 md:px-4 md:py-2 rounded-lg border border-gray-700 whitespace-nowrap">
                                 <span className="text-gray-400">{t('profile.liked')}</span>
-                                <span className="text-red-400 font-bold ml-1.5">{globalCards.filter(c => c.isLiked).length}</span>
+                                <span className="text-red-400 font-bold ml-1.5">{likedCards.length}</span>
+                            </div>
+                            <div className="bg-gray-800 px-3 py-1.5 md:px-4 md:py-2 rounded-lg border border-gray-700 whitespace-nowrap">
+                                <span className="text-gray-400">{t('profile.packs')}</span>
+                                <span className="text-amber-300 font-bold ml-1.5">{purchasedPacks.length}</span>
                             </div>
                         </div>
                     </div>
@@ -170,9 +203,38 @@ export const Profile: React.FC<ProfileProps> = ({
                         >
                             {t('tab.favorites')}
                         </button>
+                        <button 
+                            onClick={() => setActiveTab('packs')}
+                            className={`font-bold pb-3 md:pb-4 px-2 transition-colors border-b-2 whitespace-nowrap text-sm md:text-base ${
+                                activeTab === 'packs' 
+                                    ? 'text-amber-400 border-amber-400' 
+                                    : 'text-gray-500 border-transparent hover:text-gray-300'
+                            }`}
+                        >
+                            {t('tab.purchased_packs')}
+                        </button>
                     </div>
 
-                    {/* Cards Grid */}
+                    {activeTab === 'packs' ? (
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                            {purchasedPacks.map((pack) => (
+                                <PackCard
+                                    key={pack.id}
+                                    pack={pack}
+                                    meta={[
+                                        { label: t('packs.cards_count'), value: pack.packCount },
+                                        { label: t('profile.pack_bought'), value: new Date(pack.purchasedAt).toLocaleDateString('en-CA') },
+                                    ]}
+                                    primaryActionLabel={t('packs.open_owned_pack')}
+                                    onPrimaryAction={(selectedPack) => onOpenPurchasedPack?.(selectedPack as PurchasedPack)}
+                                    showPrimaryIcon={false}
+                                    compact={true}
+                                    secondaryActionLabel={t('packs.view_pack')}
+                                    onSecondaryAction={() => undefined}
+                                />
+                            ))}
+                        </div>
+                    ) : (
                     <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-8">
                          {displayCards.map((card) => (
                              <div key={card.id} className="flex flex-col gap-2 md:gap-4 group">
@@ -192,6 +254,26 @@ export const Profile: React.FC<ProfileProps> = ({
                                              </div>
                                          </TiltCard>
                                      </div>
+
+                                     {activeTab === 'creations' && isPublishedCard(card) && (
+                                        <div className="absolute left-2 top-2 md:left-3 md:top-3 z-10 rounded-full border border-green-400/25 bg-green-500/18 px-2.5 py-1 text-[10px] md:text-xs font-bold text-green-200 backdrop-blur-md shadow-lg">
+                                            {t('card.published_badge')}
+                                        </div>
+                                     )}
+                                     {activeTab === 'favorites' && getFavoriteStateLabel(card) && (
+                                        <div className={`absolute left-2 top-2 md:left-3 md:top-3 z-10 rounded-full px-2.5 py-1 text-[10px] md:text-xs font-bold backdrop-blur-md shadow-lg ${
+                                            isDeletedCard(card)
+                                                ? 'border border-red-400/25 bg-red-500/18 text-red-100'
+                                                : 'border border-amber-400/25 bg-amber-500/18 text-amber-100'
+                                        }`}>
+                                            {getFavoriteStateLabel(card)}
+                                        </div>
+                                     )}
+                                     {isAppraisedCard(card) && (
+                                        <div className="absolute right-2 top-2 md:right-3 md:top-3 z-10 rounded-full border border-amber-400/25 bg-amber-500/18 px-2.5 py-1 text-[10px] md:text-xs font-bold text-amber-100 backdrop-blur-md shadow-lg">
+                                            已鑑定
+                                        </div>
+                                     )}
 
                                     {/* Desktop Actions Overlay - Hidden on Mobile (md:flex) */}
                                     {/* This prevents mobile click interference */}
@@ -215,7 +297,7 @@ export const Profile: React.FC<ProfileProps> = ({
                                                     onClick={(e) => {
                                                         e.preventDefault();
                                                         e.stopPropagation();
-                                                        if (card.id) onToggleLike(card.id);
+                                                        if (card.id) onRemoveFavorite(card.id);
                                                     }} 
                                                     className="w-full max-w-[160px] bg-red-600 text-white py-2.5 rounded-full font-bold text-xs flex items-center justify-center gap-2 hover:scale-105 transition-transform mt-2 shadow-lg cursor-pointer"
                                                 > 
@@ -253,9 +335,13 @@ export const Profile: React.FC<ProfileProps> = ({
                                                                 e.stopPropagation();
                                                                 onPublishCard(card);
                                                             }} 
-                                                            className="w-full max-w-[160px] bg-green-600 text-white py-2.5 rounded-full font-bold text-xs flex items-center justify-center gap-2 hover:scale-105 transition-transform shadow-lg cursor-pointer"
+                                                            className={`w-full max-w-[160px] py-2.5 rounded-full font-bold text-xs flex items-center justify-center gap-2 hover:scale-105 transition-transform shadow-lg cursor-pointer ${
+                                                                isPublishedCard(card)
+                                                                    ? 'bg-amber-600 text-white'
+                                                                    : 'bg-green-600 text-white'
+                                                            }`}
                                                         > 
-                                                            <GlobeIcon className="w-3 h-3" /> {t('btn.publish_card')} 
+                                                            <GlobeIcon className="w-3 h-3" /> {isPublishedCard(card) ? t('btn.unpublish_card') : t('btn.publish_card')} 
                                                         </button>
                                                         <button 
                                                             onClick={(e) => {
@@ -275,8 +361,19 @@ export const Profile: React.FC<ProfileProps> = ({
                                  </div>
                                  
                                  <div className="flex justify-between items-center px-1 md:px-2">
-                                     <span className="font-bold text-white truncate max-w-[100px] md:max-w-[150px] text-xs md:text-base">{card.name}</span>
-                                     <span className="text-[10px] md:text-xs text-gray-500">{card.subtype}</span>
+                                     <div className="min-w-0">
+                                         <span className="font-bold text-white block truncate max-w-[100px] md:max-w-[150px] text-xs md:text-base">{card.name}</span>
+                                         {activeTab === 'creations' && isPublishedCard(card) && (
+                                            <span className="text-[10px] md:text-xs text-green-300">{t('card.published_badge')}</span>
+                                         )}
+                                         {activeTab === 'favorites' && getFavoriteStateNotice(card) && (
+                                            <span className={`block text-[10px] md:text-xs ${isDeletedCard(card) ? 'text-red-300' : 'text-amber-300'}`}>{getFavoriteStateNotice(card)}</span>
+                                         )}
+                                         {isAppraisedCard(card) && (
+                                            <span className="block text-[10px] md:text-xs text-amber-300">已鑑定</span>
+                                         )}
+                                     </div>
+                                     <span className="text-[10px] md:text-xs text-gray-500">{getSubtypeLabel(card.subtype, language)}</span>
                                  </div>
                              </div>
                          ))}
@@ -295,6 +392,7 @@ export const Profile: React.FC<ProfileProps> = ({
                              </div>
                          )}
                     </div>
+                    )}
                 </div>
             </div>
 
@@ -313,7 +411,7 @@ export const Profile: React.FC<ProfileProps> = ({
                          </button>
 
                          {/* Left: Card Preview */}
-                         <div className="w-[65vw] max-w-[300px] md:w-auto md:max-w-none flex-shrink-0 animate-in zoom-in-90 duration-300 md:transform md:scale-[1.1]">
+                         <div className="w-[85vw] max-w-[420px] md:w-[420px] md:max-w-none flex-shrink-0 animate-in zoom-in-90 duration-300">
                              <TiltCard className="w-full aspect-[420/588] rounded-[24px] shadow-2xl shadow-black/50" maxAngle={20}>
                                  <ResponsiveCardContainer>
                                      <CardPreview data={viewCard} />
@@ -326,8 +424,21 @@ export const Profile: React.FC<ProfileProps> = ({
                              <div>
                                  <h2 className="text-3xl md:text-4xl font-bold text-white mb-2 font-heading">{viewCard.name}</h2>
                                  <div className="flex items-center gap-3 text-gray-400">
-                                     <span className="px-3 py-1 bg-gray-800 rounded-full text-xs md:text-sm font-medium border border-gray-700">{viewCard.supertype}</span>
-                                     <span className="px-3 py-1 bg-gray-800 rounded-full text-xs md:text-sm font-medium border border-gray-700">{viewCard.subtype}</span>
+                                     <span className="px-3 py-1 bg-gray-800 rounded-full text-xs md:text-sm font-medium border border-gray-700">{getSupertypeLabel(viewCard.supertype)}</span>
+                                     <span className="px-3 py-1 bg-gray-800 rounded-full text-xs md:text-sm font-medium border border-gray-700">{getSubtypeLabel(viewCard.subtype, language)}</span>
+                                     {isPublishedCard(viewCard) && (
+                                        <span className="px-3 py-1 bg-green-500/15 rounded-full text-xs md:text-sm font-medium border border-green-500/30 text-green-300">{t('card.published_badge')}</span>
+                                     )}
+                                     {activeTab === 'favorites' && getFavoriteStateLabel(viewCard) && (
+                                        <span className={`px-3 py-1 rounded-full text-xs md:text-sm font-medium ${
+                                            isDeletedCard(viewCard)
+                                                ? 'bg-red-500/15 border border-red-500/30 text-red-200'
+                                                : 'bg-amber-500/15 border border-amber-500/30 text-amber-200'
+                                        }`}>{getFavoriteStateLabel(viewCard)}</span>
+                                     )}
+                                     {isAppraisedCard(viewCard) && (
+                                        <span className="px-3 py-1 bg-amber-500/15 rounded-full text-xs md:text-sm font-medium border border-amber-500/30 text-amber-200">已鑑定</span>
+                                     )}
                                  </div>
                              </div>
 
@@ -342,11 +453,32 @@ export const Profile: React.FC<ProfileProps> = ({
                                      <span className="text-white font-medium">{viewCard.hp}</span>
                                  </div>
                                  <div className="pt-2">
-                                     <span className="text-gray-500 text-sm uppercase font-bold block mb-2">Description</span>
+                                     <span className="text-gray-500 text-sm uppercase font-bold block mb-2">{t('label.dexentry')}</span>
                                      <p className="text-gray-300 text-sm italic leading-relaxed">
-                                         {viewCard.pokedexEntry || "No pokedex entry available."}
+                                         {viewCard.pokedexEntry || t('msg.no_lore_entry')}
                                      </p>
                                  </div>
+                                 {isUnavailableFavorite(viewCard) && (
+                                    <div className="pt-2 border-t border-gray-700">
+                                        <span className="text-gray-500 text-sm uppercase font-bold block mb-2">{t('favorites.unavailable_title')}</span>
+                                        <div className={`rounded-xl p-4 ${
+                                            isDeletedCard(viewCard)
+                                                ? 'border border-red-500/20 bg-red-500/5'
+                                                : 'border border-amber-500/20 bg-amber-500/5'
+                                        }`}>
+                                            <p className={`text-sm leading-relaxed ${isDeletedCard(viewCard) ? 'text-red-100/90' : 'text-amber-100/90'}`}>{getFavoriteStateNotice(viewCard)}</p>
+                                        </div>
+                                    </div>
+                                 )}
+                                 {isAppraisedCard(viewCard) && (
+                                    <div className="pt-2 border-t border-gray-700">
+                                        <span className="text-gray-500 text-sm uppercase font-bold block mb-2">Appraisal</span>
+                                        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 space-y-2">
+                                            <div className="text-2xl font-black text-amber-300">{viewCard.appraisal?.price}</div>
+                                            <p className="text-sm leading-relaxed text-amber-100/90">{viewCard.appraisal?.comment}</p>
+                                        </div>
+                                    </div>
+                                 )}
                              </div>
 
                              {/* Action Buttons */}
@@ -362,10 +494,14 @@ export const Profile: React.FC<ProfileProps> = ({
                                     <div className="flex gap-3">
                                         <button 
                                             onClick={() => { onPublishCard(viewCard); setViewCard(null); }}
-                                            className="flex-1 bg-[#161b22] hover:bg-[#1f2937] text-green-400 border border-green-900/50 font-bold py-3.5 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95"
+                                            className={`flex-1 font-bold py-3.5 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95 border ${
+                                                isPublishedCard(viewCard)
+                                                    ? 'bg-[#161b22] hover:bg-amber-900/20 text-amber-300 border-amber-900/50'
+                                                    : 'bg-[#161b22] hover:bg-[#1f2937] text-green-400 border-green-900/50'
+                                            }`}
                                         >
                                             <GlobeIcon className="w-5 h-5" />
-                                            Publish
+                                            {isPublishedCard(viewCard) ? t('btn.unpublish_card') : t('btn.publish_card')}
                                         </button>
                                         <button 
                                             onClick={() => { 
@@ -381,7 +517,7 @@ export const Profile: React.FC<ProfileProps> = ({
                                 </div>
                              ) : (
                                 <button 
-                                    onClick={() => { onToggleLike(viewCard.id!); setViewCard(null); }}
+                                    onClick={() => { onRemoveFavorite(viewCard.id!); setViewCard(null); }}
                                     className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95"
                                 >
                                     <TrashIcon className="w-5 h-5" />

@@ -10,7 +10,12 @@ import { useLanguage } from '../contexts/LanguageContext';
 interface AppraiserProps {
     user: User | null;
     myCards: CardData[];
-    onSpendCoins: (amount: number) => Promise<boolean>;
+    onUpdateUserCoins: (coins: number) => void;
+    onSaveAppraisal: (
+        cardId: string,
+        appraisal: { price: string; comment: string; language: 'en' | 'zh-Hant' },
+    ) => Promise<CardData>;
+    addNotification: (type: 'success' | 'error' | 'info', message: string) => void;
     onLoginRequired: () => void;
 }
 
@@ -44,21 +49,70 @@ const ResponsiveCardContainer: React.FC<{ children: React.ReactNode }> = ({ chil
     );
 };
 
-export const Appraiser: React.FC<AppraiserProps> = ({ user, myCards, onSpendCoins, onLoginRequired }) => {
+export const Appraiser: React.FC<AppraiserProps> = ({
+    user,
+    myCards,
+    onUpdateUserCoins,
+    onSaveAppraisal,
+    addNotification,
+    onLoginRequired,
+}) => {
     const [selectedCard, setSelectedCard] = useState<CardData | null>(null);
     const [isScanning, setIsScanning] = useState(false);
     const [scanStage, setScanStage] = useState(0); // 0: Idle, 1: Scanning, 2: Analyzing, 3: Result
     const [result, setResult] = useState<{ price: string, comment: string } | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const { t } = useLanguage();
+    const [isSaving, setIsSaving] = useState(false);
+    const { t, language } = useLanguage();
+    const analysisTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const COST = 20;
 
+    const clearAnalysisTimer = () => {
+        if (analysisTimerRef.current) {
+            clearTimeout(analysisTimerRef.current);
+            analysisTimerRef.current = null;
+        }
+    };
+
+    useEffect(() => {
+        return () => {
+            clearAnalysisTimer();
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!selectedCard?.id) return;
+        const updatedCard = myCards.find(card => card.id === selectedCard.id);
+        if (updatedCard) {
+            setSelectedCard(updatedCard);
+        }
+    }, [myCards, selectedCard?.id]);
+
     const handleSelect = (card: CardData) => {
+        clearAnalysisTimer();
         setSelectedCard(card);
         setScanStage(0);
         setResult(null);
         setError(null);
+    };
+
+    const handleSaveResult = async () => {
+        if (!selectedCard?.id || !result || isSaving) return;
+        setIsSaving(true);
+        try {
+            const savedCard = await onSaveAppraisal(selectedCard.id, {
+                price: result.price,
+                comment: result.comment,
+                language: language === 'en' ? 'en' : 'zh-Hant',
+            });
+            setSelectedCard(savedCard);
+            addNotification('success', language === 'en' ? 'Appraisal saved.' : '鑑定結果已保存。');
+        } catch (e: any) {
+            addNotification('error', e.message || (language === 'en' ? 'Failed to save appraisal.' : '保存鑑定結果失敗。'));
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const handleStartAppraisal = async () => {
@@ -74,34 +128,28 @@ export const Appraiser: React.FC<AppraiserProps> = ({ user, myCards, onSpendCoin
             return;
         }
 
-        // [后端接口规范] 原子化鉴宝接口
-        // ------------------------------------------------------------------
-        // 该逻辑应迁移至单一后端接口，保证扣费和生成的原子性。
-        //
-        // 1. 接口方法: POST /api/ai/appraise (同 geminiService.ts 规范)
-        // 2. 流程: 
-        //    a) 前端发起请求。
-        //    b) 后端验证金币 -> 扣费 -> 调用 AI -> 记录日志。
-        //    c) 后端返回结果 { price, comment, remainingCoins }。
-        
-        const success = await onSpendCoins(COST);
-        if (!success) {
-            setError("Transaction failed.");
-            return;
-        }
-
         setIsScanning(true);
         setScanStage(1);
         setError(null);
 
         // Simulate scanning stages
-        setTimeout(() => setScanStage(2), 2000);
+        clearAnalysisTimer();
+        analysisTimerRef.current = setTimeout(() => {
+            setScanStage(2);
+            analysisTimerRef.current = null;
+        }, 2000);
 
         try {
-            const appraisal = await generateAppraisal(selectedCard);
-            setResult(appraisal);
+            const appraisal = await generateAppraisal(
+                selectedCard,
+                language === 'en' ? 'en' : 'zh-Hant',
+            );
+            clearAnalysisTimer();
+            setResult({ price: appraisal.price, comment: appraisal.comment });
+            onUpdateUserCoins(appraisal.remainingCoins);
             setScanStage(3);
         } catch (e: any) {
+            clearAnalysisTimer();
             setError(e.message || "Appraisal failed.");
             setScanStage(0);
         } finally {
@@ -110,9 +158,11 @@ export const Appraiser: React.FC<AppraiserProps> = ({ user, myCards, onSpendCoin
     };
 
     const handleReset = () => {
+        clearAnalysisTimer();
         setSelectedCard(null);
         setScanStage(0);
         setResult(null);
+        setError(null);
     };
 
     if (!user) {
@@ -251,7 +301,7 @@ export const Appraiser: React.FC<AppraiserProps> = ({ user, myCards, onSpendCoin
                                                 className="flex-[2] bg-gradient-to-r from-purple-600 to-pink-600 hover:brightness-110 text-white font-bold py-3 rounded-xl shadow-lg shadow-purple-900/30 transition-all active:scale-95 flex items-center justify-center gap-2 hover:shadow-[0_0_20px_rgba(168,85,247,0.6)]"
                                             >
                                                 <GavelIcon className="w-5 h-5" />
-                                                {t('appraiser.start')}
+                                                {selectedCard.appraisal ? (language === 'en' ? 'RE-APPRAISE' : '重新鑑定') : t('appraiser.start')}
                                             </button>
                                         </div>
                                     </div>
@@ -282,6 +332,17 @@ export const Appraiser: React.FC<AppraiserProps> = ({ user, myCards, onSpendCoin
                                             <h3 className="text-sm font-bold text-gray-500 uppercase tracking-widest mb-2">{t('appraiser.value')}</h3>
                                             <p className="text-4xl font-black text-green-400 font-mono tracking-tight break-words">{result.price}</p>
                                         </div>
+
+                                        <button 
+                                            onClick={handleSaveResult}
+                                            disabled={isSaving}
+                                            className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-110 text-white font-bold py-3 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+                                        >
+                                            {isSaving ? <RefreshIcon className="w-4 h-4 animate-spin" /> : <GavelIcon className="w-4 h-4" />}
+                                            {selectedCard.appraisal
+                                                ? (language === 'en' ? 'Overwrite Saved Appraisal' : '覆蓋已保存鑑定')
+                                                : (language === 'en' ? 'Save Appraisal' : '保存鑑定結果')}
+                                        </button>
 
                                         <button 
                                             onClick={handleReset}

@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { ElementType } from '../types';
+import { getAttributeLabel, getAttributeTheme } from '../lib/attributes';
 
 export const Logo: React.FC<{ className?: string }> = ({ className }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
@@ -364,26 +365,7 @@ export const AlipayIcon: React.FC<{ className?: string }> = ({ className }) => (
 // Energy Symbols
 export const EnergyIcon: React.FC<{ type: string; size?: number, className?: string, flat?: boolean }> = ({ type, size = 16, className = "", flat = false }) => {
   const getColor = (t: string) => {
-    switch (t) {
-      case ElementType.Fire: return '#ef4444';
-      case ElementType.Grass: return '#22c55e';
-      case ElementType.Water: return '#3b82f6';
-      case ElementType.Lightning: return '#eab308';
-      case ElementType.Psychic: return '#a855f7';
-      case ElementType.Fighting: return '#c2410c';
-      case ElementType.Darkness: return '#1f2937';
-      case ElementType.Metal: return '#9ca3af';
-      case ElementType.Fairy: return '#f472b6';
-      case ElementType.Dragon: return '#ca8a04';
-      case ElementType.Ice: return '#22d3ee'; // Cyan for Ice
-      case ElementType.Poison: return '#d946ef'; // Fuchsia for Poison
-      case ElementType.Ground: return '#a16207'; // Yellow-800 for Ground
-      case ElementType.Flying: return '#60a5fa'; // Blue-400 for Flying
-      case ElementType.Bug: return '#84cc16'; // Lime-500 for Bug
-      case ElementType.Rock: return '#78716c'; // Stone-500 for Rock
-      case ElementType.Ghost: return '#4f46e5'; // Indigo-600 for Ghost
-      default: return '#e5e7eb'; // Colorless
-    }
+    return getAttributeTheme(t as ElementType).color;
   };
 
   const getPath = (t: string) => {
@@ -436,7 +418,7 @@ export const EnergyIcon: React.FC<{ type: string; size?: number, className?: str
         background: `radial-gradient(circle at 30% 30%, ${color}, ${type === ElementType.Darkness ? 'black' : '#000'})`,
         boxShadow: '1px 1px 2px rgba(0,0,0,0.5), inset 1px 1px 1px rgba(255,255,255,0.4)'
       }}
-      title={type}
+      title={getAttributeLabel(type)}
     >
       <svg viewBox="0 0 24 24" style={{ width: size * 0.65, height: size * 0.65, fill: 'white', filter: 'drop-shadow(0px 1px 1px rgba(0,0,0,0.5))' }}>
           <path d={path} />

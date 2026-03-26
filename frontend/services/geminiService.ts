@@ -1,37 +1,37 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
-import { CardData, ElementType, Rarity, Attack, Supertype, Subtype, HoloPattern } from "../types";
+import { CardData, ElementType, Rarity, Supertype, Subtype, HoloPattern } from "../types";
+import { getAuthToken } from './authService';
 
-// Helper to get enum keys as strings for the prompt
-const elementTypes = Object.values(ElementType).join(', ');
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:8000';
 
-const getAI = () => {
-    // [注意] 生产环境中，API Key 绝不应暴露在前端代码中。
-    // 以下前端直接调用 GoogleGenAI 的逻辑应当迁移至后端 Node.js/Python 服务。
-    const key = process.env.API_KEY;
-    if (!key) {
-        console.error("API Key is missing. Check vite.config.ts and your env variables.");
-        throw new Error("API Key is missing. Please check your configuration.");
-    }
-    return new GoogleGenAI({ apiKey: key });
+const formatBackendError = (error: any): string => {
+    const msg = error?.message || error?.toString() || "Unknown error";
+    if (msg.includes('Authentication required')) return 'Authentication required';
+    if (msg.includes('Not enough coins')) return 'Not enough coins';
+    return msg;
 };
 
-// Helper to format Gemini API errors into user-friendly messages
-const formatGeminiError = (error: any): string => {
-    const msg = error?.message || error?.toString() || "Unknown error";
-    if (msg.includes('401') || msg.includes('403') || msg.includes('PERMISSION_DENIED')) {
-        return "Permission denied. Check your API Key.";
+const authorizedJsonRequest = async <T>(path: string, init?: RequestInit): Promise<T> => {
+    const token = getAuthToken();
+    if (!token) {
+        throw new Error('Authentication required');
     }
-    if (msg.includes('429') || msg.includes('QUOTA_EXCEEDED')) {
-        return "API Quota exceeded. Please try again later.";
+
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+        ...init,
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+            ...(init?.headers || {}),
+        },
+    });
+
+    const json = await response.json().catch(() => null);
+    if (!response.ok) {
+        throw new Error(json?.detail || json?.message || 'AI request failed');
     }
-    if (msg.includes('500') || msg.includes('503')) {
-        return "AI Service is currently overloaded. Please try again.";
-    }
-    if (msg.includes('SAFETY') || msg.includes('BLOCKED')) {
-        return "Generation blocked by safety filters. Try a different prompt.";
-    }
-    return msg;
+
+    return json as T;
 };
 
 /**
@@ -75,188 +75,27 @@ const formatGeminiError = (error: any): string => {
  * 
  * 5. 需删除的 Mock 数据: 前端直接调用 `new GoogleGenAI()` 的逻辑应全部移除，改为 fetch('/api/ai/generate-text')。
  */
-export const generateCardData = async (prompt: string): Promise<Partial<CardData>> => {
+export const generateCardData = async (
+  prompt: string,
+  language: 'en' | 'zh-Hant',
+  card: CardData,
+): Promise<{ card: Partial<CardData>; remainingCoins: number }> => {
   try {
-      const ai = getAI();
-
-      const systemInstruction = `
-        You are a creative assistant designed to generate Pokémon Trading Card Game data.
-        Based on the user's prompt, create a balanced and thematic card.
-        If the prompt is vague, empty, or asks for 'random', be highly creative with the species, name, abilities, and attacks to create a unique card concept.
-        
-        MANDATORY REQUIREMENTS:
-        1. 'attacks': You MUST generate 1 or 2 attacks. Each attack MUST have:
-           - 'name': Creative attack name.
-           - 'cost': Array of ElementTypes (e.g. ["Fire", "Colorless"]).
-           - 'damage': String (e.g. "30", "120", "10+").
-           - 'description': Effect text (e.g. "Flip a coin...").
-        2. 'weakness': Must provide a valid ElementType.
-        3. 'resistance': Provide a valid ElementType or leave empty.
-        4. 'retreatCost': Integer between 0 and 4.
-
-        Return ONLY JSON matching this exact schema:
-        {
-          "name": "string",
-          "hp": "string (number)",
-          "type": "string (One of: ${elementTypes})",
-          "subtype": "string (e.g. Basic, Stage 1, ex, VMAX)",
-          "evolvesFrom": "string (optional)",
-          "attacks": [
-            {
-              "name": "string",
-              "cost": ["string (One of: ${elementTypes})"],
-              "damage": "string",
-              "description": "string"
-            }
-          ],
-          "weakness": "string (One of: ${elementTypes})",
-          "resistance": "string (One of: ${elementTypes})",
-          "retreatCost": number,
-          "illustrator": "string",
-          "setNumber": "string",
-          "rarity": "string",
-          "pokedexEntry": "string",
-          "dexSpecies": "string",
-          "dexHeight": "string",
-          "dexWeight": "string"
-        }
-      `;
-
-      // Switched to gemini-2.5-flash for better availability and speed
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: {
-            parts: [{ text: `Create a pokemon card concept based on: ${prompt}` }]
-        },
-        config: {
-          systemInstruction: systemInstruction,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              name: { type: Type.STRING },
-              hp: { type: Type.STRING },
-              type: { type: Type.STRING },
-              subtype: { type: Type.STRING },
-              evolvesFrom: { type: Type.STRING },
-              attacks: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    name: { type: Type.STRING },
-                    cost: { 
-                      type: Type.ARRAY, 
-                      items: { type: Type.STRING } 
-                    },
-                    damage: { type: Type.STRING },
-                    description: { type: Type.STRING },
-                  }
-                }
-              },
-              weakness: { type: Type.STRING },
-              resistance: { type: Type.STRING },
-              retreatCost: { type: Type.NUMBER },
-              illustrator: { type: Type.STRING },
-              setNumber: { type: Type.STRING },
-              rarity: { type: Type.STRING },
-              pokedexEntry: { type: Type.STRING },
-              dexSpecies: { type: Type.STRING },
-              dexHeight: { type: Type.STRING },
-              dexWeight: { type: Type.STRING }
-            }
-          }
-        }
+      const response = await authorizedJsonRequest<{
+        success: boolean;
+        data: {
+          card: Partial<CardData>;
+          remainingCoins: number;
+        };
+      }>('/api/ai/generate-text', {
+        method: 'POST',
+        body: JSON.stringify({ prompt, language, card }),
       });
 
-      if (response.text) {
-        try {
-          const data = JSON.parse(response.text);
-          // Normalize Type casing if needed (e.g. "fire" -> "Fire")
-          if (data.type) {
-             data.type = data.type.charAt(0).toUpperCase() + data.type.slice(1).toLowerCase();
-          }
-          if (data.weakness) {
-             data.weakness = data.weakness.charAt(0).toUpperCase() + data.weakness.slice(1).toLowerCase();
-          }
-          if (data.resistance) {
-             data.resistance = data.resistance.charAt(0).toUpperCase() + data.resistance.slice(1).toLowerCase();
-          }
-          // Add IDs to attacks for React keys
-          if (data.attacks) {
-            data.attacks = data.attacks.map((a: any, index: number) => ({ ...a, id: `gen-${Date.now()}-${index}` }));
-          }
-          return data;
-        } catch (e) {
-          console.error("Failed to parse Gemini JSON response:", response.text, e);
-          throw new Error("Received malformed data from the AI. Please try a different prompt.");
-        }
-      }
-      throw new Error("Empty response from AI.");
+      return response.data;
   } catch (error: any) {
-      console.error("Gemini API Error (Text):", error);
-      throw new Error(formatGeminiError(error));
-  }
-};
-
-/**
- * [后端接口规范] 生成单个攻击技能
- * --------------------------------------------------------------
- * 1. 接口方法: POST /api/ai/generate-attack
- * 2. 请求参数: { "name": string, "type": string }
- * 3. 返回值: { "id": "uuid", "name": "...", "cost": [], "damage": "...", "description": "..." }
- */
-export const generateSingleAttack = async (name: string, type: string): Promise<Partial<Attack>> => {
-  try {
-      const ai = getAI();
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: `Generate one balanced Pokemon attack for ${name} (${type} type). Include name, cost, damage, and effect description. Return JSON only.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              name: { type: Type.STRING },
-              cost: { 
-                type: Type.ARRAY, 
-                items: { type: Type.STRING } 
-              },
-              damage: { type: Type.STRING },
-              description: { type: Type.STRING },
-            }
-          }
-        }
-      });
-
-      if (response.text) {
-        return JSON.parse(response.text);
-      }
-      throw new Error("No attack generated.");
-  } catch (error) {
-      console.error("Gemini API Error (Attack):", error);
-      throw new Error(formatGeminiError(error));
-  }
-};
-
-/**
- * [后端接口规范] 生成图鉴描述
- * --------------------------------------------------------------
- * 1. 接口方法: POST /api/ai/generate-dex
- * 2. 请求参数: { "name": string, "species": string }
- * 3. 返回值: { "entry": "This pokemon lives in..." }
- */
-export const generateDexEntry = async (name: string, species: string): Promise<string> => {
-  try {
-      const ai = getAI();
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: `Write a short, interesting Pokedex entry for ${name} (The ${species}). Max 3 sentences.`,
-      });
-      return response.text || "No entry generated.";
-  } catch (error) {
-      console.error("Gemini API Error (Dex):", error);
-      throw new Error(formatGeminiError(error));
+      console.error("AI API Error (Text):", error);
+      throw new Error(formatBackendError(error));
   }
 };
 
@@ -287,66 +126,27 @@ export const generateDexEntry = async (name: string, species: string): Promise<s
  *      "remainingCoins": 980
  *    }
  */
-export const generateAppraisal = async (card: CardData): Promise<{ price: string, comment: string }> => {
+export const generateAppraisal = async (
+  card: CardData,
+  language: 'en' | 'zh-Hant',
+): Promise<{ price: string; comment: string; remainingCoins: number }> => {
     try {
-        const ai = getAI();
-        const cardSummary = JSON.stringify({
-            name: card.name,
-            hp: card.hp,
-            type: card.supertype === 'Pokémon' ? card.type : card.supertype,
-            attacks: card.attacks?.map(a => `${a.name} (${a.damage})`),
-            rarity: card.rarity,
-            illustrator: card.illustrator
+        const response = await authorizedJsonRequest<{
+          success: boolean;
+          data: {
+            price: string;
+            comment: string;
+            remainingCoins: number;
+          };
+        }>('/api/ai/appraise', {
+          method: 'POST',
+          body: JSON.stringify({ card, language }),
         });
 
-        const prompt = `
-            Act as a snarky, ruthless, and funny Pokemon card appraiser (like a mean version of Pawn Stars or Antiques Roadshow).
-            Analyze this card data: ${cardSummary}.
-            
-            Strictly follow these rules for the JSON output:
-            1. 'price': A VERY SHORT string (max 12 characters). Examples: "$0.05", "$10.50", "$9,000", "Priceless".
-               - Do NOT generate long sequences of numbers or repeated text.
-               - Do NOT output "$0.051337...". Keep it to standard currency format.
-            2. 'comment': A short, sarcastic roast (max 2 sentences).
-            3. If the card stats are impossible (e.g. HP > 340), call it a fake and value it low.
-        `;
-
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: prompt,
-            config: {
-                temperature: 0.7, // Lower temperature to prevent hallucination loops
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        price: { type: Type.STRING },
-                        comment: { type: Type.STRING }
-                    }
-                }
-            }
-        });
-
-        if (response.text) {
-            const data = JSON.parse(response.text);
-            
-            // Hard limit on price string length to prevent UI breakage from hallucinations
-            if (data.price && data.price.length > 15) {
-                // Try to find a valid currency part or just truncate
-                const match = data.price.match(/^(\$?\d+(?:,\d{3})*(?:\.\d{2})?)/);
-                if (match) {
-                    data.price = match[0];
-                } else {
-                    data.price = data.price.substring(0, 12) + "...";
-                }
-            }
-            
-            return data;
-        }
-        throw new Error("AI failed to appraise.");
+        return response.data;
     } catch (error) {
-        console.error("Gemini API Error (Appraisal):", error);
-        throw new Error(formatGeminiError(error));
+        console.error("AI API Error (Appraisal):", error);
+        throw new Error(formatBackendError(error));
     }
 };
 
@@ -377,10 +177,6 @@ export const generateAppraisal = async (card: CardData): Promise<{ price: string
  * 
  * 5. 需删除的 Mock 数据: 前端目前直接接收 Base64 并显示，这会消耗大量内存且无法持久化，需改为接收 URL。
  */
-// 后端基础地址 (建议写在环境变量或配置文件中)
-// api.ts
-const API_BASE_URL = "http://127.0.0.1:8000";
-
 export const generateCardImage = async (prompt: string, userId: number): Promise<string> => {
   try {
     const response = await fetch(`${API_BASE_URL}/generate/text`, {

@@ -42,13 +42,12 @@ export enum TrainerType {
 }
 
 export enum Rarity {
-  Common = 'Common',
-  Uncommon = 'Uncommon',
-  Rare = 'Rare',
-  DoubleRare = 'Double Rare',
-  UltraRare = 'Ultra Rare',
-  SecretRare = 'Secret Rare',
-  IllustrationRare = 'Illustration Rare',
+  Trash = 'trash',
+  Defective = 'defective',
+  Promising = 'promising',
+  Unhinged = 'unhinged',
+  MadKing = 'mad_king',
+  Untouchable = 'untouchable',
 }
 
 export enum HoloPattern {

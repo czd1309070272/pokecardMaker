@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { CardData, HoloPattern, User } from '../../types';
 import { InputField, SelectField, TextAreaField } from '../ui/FormControls';
 import { ArtworkIcon, UploadIcon, MagicWandIcon, RefreshIcon, CoinIcon, SparklesIcon } from '../Icons';
@@ -19,15 +19,6 @@ interface FormArtworkProps {
     cooldown: number;
 }
 
-const SUGGESTED_PROMPTS = [
-  "Charizard breathing fire",
-  "Cute Pikachu in a forest",
-  "Mewtwo in a cyberpunk city",
-  "Gengar lurking in shadows",
-  "Eevee playing in flowers",
-  "Anime art style"
-];
-
 export const FormArtwork: React.FC<FormArtworkProps> = ({ 
     data, onChange, user, onLoginRequired, 
     isGeneratingImage, setIsGeneratingImage, addNotification, setCooldown, cooldown 
@@ -41,7 +32,26 @@ export const FormArtwork: React.FC<FormArtworkProps> = ({
     const [pendingFile, setPendingFile] = useState<File | null>(null);
     
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const { t } = useLanguage();
+    const { t, language } = useLanguage();
+    const suggestedPrompts = useMemo(() => (
+        language === 'en'
+            ? [
+                'street dragon yelling in neon rain',
+                'chaotic alley mascot with dramatic lighting',
+                'ghostly king in a cramped city rooftop',
+                'suspicious creature hiding in wet market shadows',
+                'over-the-top anime showdown pose',
+                'absurd Hong Kong comic poster style',
+            ]
+            : [
+                '霓虹雨夜裡咆哮的街口惡龍',
+                '戲劇燈光下的混亂吉祥物',
+                '擠迫天台上的陰氣王者',
+                '躲在街市陰影裡的可疑怪物',
+                '超浮誇動漫對決姿勢',
+                '荒誕港漫海報風格',
+            ]
+    ), [language]);
 
     // 清理 Object URL 防止内存泄漏
     useEffect(() => {
@@ -56,7 +66,7 @@ export const FormArtwork: React.FC<FormArtworkProps> = ({
         if (!user) { onLoginRequired(); return; }
         if (!aiPrompt) return;
         if (cooldown > 0) {
-            addNotification('info', `Please wait ${cooldown}s.`);
+            addNotification('info', t('msg.wait_seconds').replace('{seconds}', String(cooldown)));
             return;
         }
     
@@ -70,7 +80,7 @@ export const FormArtwork: React.FC<FormArtworkProps> = ({
           setCooldown(60); 
           addNotification('success', t('msg.gen_art'));
         } catch (error: any) {
-          addNotification('error', error.message || 'Generation failed.');
+          addNotification('error', error.message || t('msg.generate_art_failed'));
         } finally {
           setIsGeneratingImage(false);
         }
@@ -81,12 +91,12 @@ export const FormArtwork: React.FC<FormArtworkProps> = ({
         
         // 如果没有 pendingFile，说明当前图片不是刚刚上传的或者是外链
         if (!pendingFile) {
-            addNotification('error', 'Please upload a local image first to redraw.');
+            addNotification('error', t('msg.redraw_local_first'));
             return;
         }
 
         if (cooldown > 0) {
-            addNotification('info', `Please wait ${cooldown}s.`);
+            addNotification('info', t('msg.wait_seconds').replace('{seconds}', String(cooldown)));
             return;
         }
     
@@ -97,9 +107,9 @@ export const FormArtwork: React.FC<FormArtworkProps> = ({
             const newImageUrl = await redrawCardImage(1,pendingFile, promptToUse);
             onChange('image', newImageUrl);
             setCooldown(60); 
-            addNotification('success', 'AI Redraw complete!');
+            addNotification('success', t('msg.redraw_complete'));
         } catch (error: any) {
-            addNotification('error', error.message || 'Redraw failed.');
+            addNotification('error', error.message || t('msg.redraw_failed'));
         } finally {
             setIsGeneratingImage(false);
         }
@@ -114,9 +124,9 @@ export const FormArtwork: React.FC<FormArtworkProps> = ({
           const objectUrl = URL.createObjectURL(file);
           onChange('image', objectUrl);
           
-          addNotification('success', 'Image ready for redraw.');
+          addNotification('success', t('msg.image_ready'));
         } else {
-            addNotification('error', 'Invalid image file.');
+            addNotification('error', t('msg.invalid_image'));
         }
     }, [onChange, addNotification]);
   
@@ -135,10 +145,10 @@ export const FormArtwork: React.FC<FormArtworkProps> = ({
     }, [processFile]);
 
     return (
-        <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
              <div className="flex items-center gap-2 text-white font-bold text-lg border-b border-gray-800 pb-2">
                 <ArtworkIcon className="w-5 h-5 text-blue-400" />
-                Card Artwork
+                {t('form.artwork_title')}
             </div>
 
             <div className="flex p-1 bg-[#1a1d24] rounded-lg">
@@ -164,10 +174,10 @@ export const FormArtwork: React.FC<FormArtworkProps> = ({
                         label={t('label.prompt')}
                         value={aiPrompt}
                         onChange={setAiPrompt}
-                        placeholder="Describe your artwork..."
+                        placeholder={t('placeholder.prompt')}
                     />
                     <div className="flex flex-wrap gap-2">
-                        {SUGGESTED_PROMPTS.map((prompt, i) => (
+                        {suggestedPrompts.map((prompt, i) => (
                             <button
                                 key={i}
                                 onClick={() => setAiPrompt(prompt)}
@@ -200,18 +210,18 @@ export const FormArtwork: React.FC<FormArtworkProps> = ({
                     >
                         <input type="file" ref={fileInputRef} className="hidden" onChange={handleImageUpload} accept="image/*" />
                         <UploadIcon className="w-8 h-8 mb-2 text-gray-500" />
-                        <span className="text-xs text-gray-400">Click or Drop to Upload</span>
+                        <span className="text-xs text-gray-400">{t('placeholder.upload_drop')}</span>
                     </div>
 
                     {pendingFile && (
                         <div className="bg-[#13161b] rounded-xl p-4 border border-gray-800 space-y-3">
                             <div className="text-xs font-bold text-purple-400 uppercase tracking-wider flex items-center gap-2">
-                                <MagicWandIcon className="w-3 h-3" /> AI Redraw Mode
+                                <MagicWandIcon className="w-3 h-3" /> {t('form.ai_redraw_mode')}
                             </div>
                             <TextAreaField
                                 value={aiPrompt}
                                 onChange={setAiPrompt}
-                                placeholder="Describe the style (e.g. 'Watercolor', 'Vibrant Anime')"
+                                placeholder={t('placeholder.art_style')}
                                 height="h-16"
                             />
                             <button 
@@ -233,15 +243,28 @@ export const FormArtwork: React.FC<FormArtworkProps> = ({
             {/* Common Controls */}
             <div className="border-t border-gray-800 pt-4 space-y-4">
                 <SelectField 
-                    label="Holo Pattern"
+                    label={t('label.holo_pattern')}
                     value={data.holoPattern}
                     onChange={(v: any) => onChange('holoPattern', v)}
-                    options={Object.values(HoloPattern)}
+                    options={[
+                        { value: HoloPattern.None, label: t('holo.none') },
+                        { value: HoloPattern.Starlight, label: t('holo.starlight') },
+                        { value: HoloPattern.Cosmos, label: t('holo.cosmos') },
+                        { value: HoloPattern.Tinsel, label: t('holo.tinsel') },
+                        { value: HoloPattern.Sheen, label: t('holo.sheen') },
+                        { value: HoloPattern.CrackedIce, label: t('holo.cracked_ice') },
+                        { value: HoloPattern.Crosshatch, label: t('holo.crosshatch') },
+                        { value: HoloPattern.WaterWeb, label: t('holo.water_web') },
+                        { value: HoloPattern.Sequin, label: t('holo.sequin') },
+                        { value: HoloPattern.Pixel, label: t('holo.pixel') },
+                        { value: HoloPattern.VerticalBars, label: t('holo.vertical_bars') },
+                        { value: HoloPattern.BorderGlow, label: t('holo.border_glow') },
+                    ]}
                 />
 
                 <div className="grid grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Zoom</label>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">{t('label.zoom')}</label>
                         <input 
                             type="range" min="0.5" max="2" step="0.1" value={data.zoom}
                             onChange={(e) => onChange('zoom', parseFloat(e.target.value))}
@@ -249,8 +272,8 @@ export const FormArtwork: React.FC<FormArtworkProps> = ({
                         />
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                         <InputField label="X" value={data.xOffset} onChange={(v:any) => onChange('xOffset', parseInt(v))} type="number" />
-                         <InputField label="Y" value={data.yOffset} onChange={(v:any) => onChange('yOffset', parseInt(v))} type="number" />
+                         <InputField label={t('label.x_offset')} value={data.xOffset} onChange={(v:any) => onChange('xOffset', parseInt(v))} type="number" />
+                         <InputField label={t('label.y_offset')} value={data.yOffset} onChange={(v:any) => onChange('yOffset', parseInt(v))} type="number" />
                     </div>
                 </div>
             </div>

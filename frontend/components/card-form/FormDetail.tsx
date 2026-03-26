@@ -1,10 +1,10 @@
 
-import React, { useState } from 'react';
-import { CardData, Rarity, Supertype } from '../../types';
+import React from 'react';
+import { CardData, Supertype } from '../../types';
 import { InputField, SelectField, TextAreaField } from '../ui/FormControls';
-import { DetailIcon, RobotIcon } from '../Icons';
-import { generateDexEntry } from '../../services/geminiService';
+import { DetailIcon } from '../Icons';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { getRarityOptions, normalizeRarity } from '../../lib/rarity';
 
 interface FormDetailProps {
     data: CardData;
@@ -14,35 +14,20 @@ interface FormDetailProps {
     addNotification: (type: 'success' | 'error', msg: string) => void;
 }
 
-export const FormDetail: React.FC<FormDetailProps> = ({ data, onChange, user, onLoginRequired, addNotification }) => {
-    const { t } = useLanguage();
-    const [isGenerating, setIsGenerating] = useState(false);
-
-    const handleGenerateDexEntry = async () => {
-        if (!user) { onLoginRequired(); return; }
-        if(isGenerating) return;
-        setIsGenerating(true);
-        try {
-            const entry = await generateDexEntry(data.name, data.dexSpecies || 'Pokemon');
-            onChange('pokedexEntry', entry);
-            addNotification('success', 'Dex entry written!');
-        } catch (error: any) {
-            addNotification('error', error.message || 'Failed to write entry.');
-        } finally {
-            setIsGenerating(false);
-        }
-    };
+export const FormDetail: React.FC<FormDetailProps> = ({ data, onChange, addNotification }) => {
+    const { t, language } = useLanguage();
+    const rarityOptions = getRarityOptions(language);
 
     return (
-        <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <div className="space-y-5 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <div className="flex items-center gap-2 text-white font-bold text-lg border-b border-gray-800 pb-2">
                 <DetailIcon className="w-5 h-5 text-blue-400" />
-                Card Info & Details
+                {t('form.detail_title')}
             </div>
 
             {data.supertype === Supertype.Energy ? (
                 <div className="p-4 bg-gray-800/50 rounded-lg text-center text-sm text-gray-500">
-                    No additional details required for Energy cards.
+                    {t('msg.no_energy_details')}
                 </div>
             ) : (
                 <>
@@ -54,9 +39,9 @@ export const FormDetail: React.FC<FormDetailProps> = ({ data, onChange, user, on
                         />
                             <SelectField 
                             label={t('label.rarity')} 
-                            value={data.rarity} 
+                            value={normalizeRarity(data.rarity)}
                             onChange={(v: any) => onChange('rarity', v)} 
-                            options={Object.values(Rarity)}
+                            options={rarityOptions}
                         />
                     </div>
 
@@ -65,13 +50,13 @@ export const FormDetail: React.FC<FormDetailProps> = ({ data, onChange, user, on
                             label={t('label.setnum')}
                             value={data.setNumber} 
                             onChange={(v: any) => onChange('setNumber', v)} 
-                            placeholder="001/165"
+                            placeholder={t('placeholder.set_number')}
                         />
                             <InputField 
                             label={t('label.regmark')}
                             value={data.regulationMark} 
                             onChange={(v: any) => onChange('regulationMark', v)} 
-                            placeholder="G"
+                            placeholder={t('placeholder.reg_mark')}
                         />
                     </div>
 
@@ -82,10 +67,10 @@ export const FormDetail: React.FC<FormDetailProps> = ({ data, onChange, user, on
                                 onClick={() => document.getElementById('setsym-upload')?.click()}
                                 className="bg-[#13161b] hover:bg-[#1a1d24] border border-gray-700 rounded-lg py-2 px-4 text-xs text-gray-300 font-bold transition-colors hover:text-white"
                                 >
-                                    Upload Icon
+                                    {t('form.upload_set_icon')}
                                 </button>
                                 {data.setSymbolImage && (
-                                    <button onClick={() => onChange('setSymbolImage', undefined)} className="text-red-400 hover:text-red-300 text-xs">Remove</button>
+                                    <button onClick={() => onChange('setSymbolImage', undefined)} className="text-red-400 hover:text-red-300 text-xs">{t('form.remove')}</button>
                                 )}
                                 <input 
                                 id="setsym-upload" 
@@ -99,7 +84,7 @@ export const FormDetail: React.FC<FormDetailProps> = ({ data, onChange, user, on
                                         reader.onload = (event) => {
                                             const base64 = event.target?.result as string;
                                             onChange('setSymbolImage', base64);
-                                            addNotification('success', 'Set symbol updated!');
+                                            addNotification('success', t('msg.set_symbol_updated'));
                                         };
                                         reader.readAsDataURL(file);
                                     }
@@ -111,35 +96,32 @@ export const FormDetail: React.FC<FormDetailProps> = ({ data, onChange, user, on
                     {data.supertype === Supertype.Pokemon && (
                         <>
                                 <div className="border-t border-gray-800 pt-2 mt-2">
-                                <div className="text-xs font-bold text-gray-500 uppercase mb-3">Dex Stats</div>
+                                <div className="text-xs font-bold text-gray-500 uppercase mb-3">{t('form.dex_stats')}</div>
                                 <div className="grid grid-cols-3 gap-2">
                                         <InputField 
-                                        label="Species"
+                                        label={t('label.dex_species')}
                                         value={data.dexSpecies} 
                                         onChange={(v: any) => onChange('dexSpecies', v)} 
-                                        placeholder="Mouse Pokémon"
+                                        placeholder={t('placeholder.dex_species')}
                                     />
                                     <InputField 
-                                        label="Height"
+                                        label={t('label.dex_height')}
                                         value={data.dexHeight} 
                                         onChange={(v: any) => onChange('dexHeight', v)} 
-                                        placeholder="1'04"
+                                        placeholder={t('placeholder.dex_height')}
                                     />
                                     <InputField 
-                                        label="Weight"
+                                        label={t('label.dex_weight')}
                                         value={data.dexWeight} 
                                         onChange={(v: any) => onChange('dexWeight', v)} 
-                                        placeholder="13.2 lbs."
+                                        placeholder={t('placeholder.dex_weight')}
                                     />
                                 </div>
                                 </div>
 
                                 <div>
-                                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1.5 flex justify-between">
-                                    <span>{t('label.dexentry')}</span>
-                                    <button onClick={handleGenerateDexEntry} className="text-purple-400 hover:text-purple-300 flex items-center gap-1 hover:scale-105 transition-transform" title="AI Write">
-                                        <RobotIcon className="w-3 h-3" /> AI
-                                    </button>
+                                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1.5">
+                                    {t('label.dexentry')}
                                 </label>
                                 <TextAreaField
                                     value={data.pokedexEntry}

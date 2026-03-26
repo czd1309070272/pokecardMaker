@@ -17,4 +17,20 @@ export interface BaseCardFields {
   yOffset: number;
   likes?: number;
   isLiked?: boolean;
+  isFavorited?: boolean;
+  isPublic?: boolean;
+  isDeleted?: boolean;
+  status?: string;
+  publishedAt?: string;
+  deletedAt?: string;
+  favoritedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  authorName?: string;
+  appraisal?: {
+    price: string;
+    comment: string;
+    language?: string;
+    appraisedAt?: string;
+  };
 }

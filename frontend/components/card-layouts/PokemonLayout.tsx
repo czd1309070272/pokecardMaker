@@ -1,23 +1,27 @@
 
 import React, { CSSProperties } from 'react';
-import { CardData, ElementType, Subtype } from '../../types';
+import { CardData, ElementType } from '../../types';
 import { useImageLoader } from '../../hooks/useImageLoader';
 import { EnergyIcon } from '../Icons';
 import { getTypeTheme } from '../../utils/cardStyles';
 import { HoloOverlay } from '../card-parts/HoloOverlay';
 import { TypeTransitionEffect } from '../card-parts/TypeTransitionEffect';
+import { resolveSubtypeCode, getSubtypeLabel } from '../../lib/subtype';
+import { useLanguage } from '../../contexts/LanguageContext';
+import { getAttributeTheme } from '../../lib/attributes';
 
 export const PokemonLayout: React.FC<{ data: CardData }> = ({ data }) => {
+    const { language } = useLanguage();
     const { currentSrc: mainImageSrc } = useImageLoader(data.image);
     const { currentSrc: setSymbolSrc } = useImageLoader(data.setSymbolImage);
 
-    const subtypeStr = (data.subtype || '').toString();
-    const isStage1 = subtypeStr.includes('Stage 1');
-    const isStage2 = subtypeStr.includes('Stage 2');
-    const isBasic = subtypeStr.includes('Basic') || (!isStage1 && !isStage2);
-    
-    const isVMAX = subtypeStr === Subtype.VMAX;
-    const isRadiant = subtypeStr === Subtype.Radiant;
+    const subtypeCode = resolveSubtypeCode(data.subtype);
+    const isStage1 = subtypeCode === 'stage1';
+    const isStage2 = subtypeCode === 'stage2';
+    const isBasic = subtypeCode === 'basic';
+    const isVMAX = subtypeCode === 'vmax';
+    const isRadiant = subtypeCode === 'radiant';
+    const subtypeLabel = getSubtypeLabel(data.subtype, language);
 
     const theme = getTypeTheme(data.type);
 
@@ -28,32 +32,9 @@ export const PokemonLayout: React.FC<{ data: CardData }> = ({ data }) => {
 
     const hasEvolution = isStage1 || isStage2 || data.evolvesFrom;
     const contentPaddingBottom = isVMAX ? 'pb-12' : 'pb-5';
-
-    // Calculate background gradient logic locally since it's specific to Pokemon layout nuances
-    const getBgGradient = (): string => {
-        switch (data.type) {
-          case ElementType.Fire: return 'bg-gradient-to-br from-[#ea580c] via-[#c2410c] to-[#7c2d12]';
-          case ElementType.Grass: return 'bg-gradient-to-br from-green-600 to-green-800';
-          case ElementType.Water: return 'bg-gradient-to-br from-blue-500 to-blue-800';
-          case ElementType.Lightning: return 'bg-gradient-to-br from-yellow-400 to-yellow-600';
-          case ElementType.Psychic: return 'bg-gradient-to-br from-purple-500 to-purple-800';
-          case ElementType.Fighting: return 'bg-gradient-to-br from-orange-600 to-orange-800';
-          case ElementType.Darkness: return 'bg-gradient-to-br from-gray-800 to-black';
-          case ElementType.Metal: return 'bg-gradient-to-br from-gray-400 to-gray-600';
-          case ElementType.Fairy: return 'bg-gradient-to-br from-pink-400 to-pink-700';
-          case ElementType.Dragon: return 'bg-gradient-to-br from-yellow-600 to-green-800';
-          case ElementType.Ice: return 'bg-gradient-to-br from-cyan-400 to-cyan-700';
-          case ElementType.Poison: return 'bg-gradient-to-br from-fuchsia-500 to-fuchsia-800';
-          case ElementType.Ground: return 'bg-gradient-to-br from-yellow-700 to-yellow-900';
-          case ElementType.Flying: return 'bg-gradient-to-br from-blue-300 to-blue-500';
-          case ElementType.Bug: return 'bg-gradient-to-br from-lime-500 to-lime-700';
-          case ElementType.Rock: return 'bg-gradient-to-br from-stone-500 to-stone-700';
-          case ElementType.Ghost: return 'bg-gradient-to-br from-indigo-500 to-indigo-800';
-          default: return 'bg-gradient-to-br from-gray-300 to-gray-400';
-        }
-    };
-
-    const bgGradient = getBgGradient();
+    const bgGradient = getAttributeTheme(data.type).cardBackground;
+    const badgeContainerClass = "absolute left-3 z-30 max-w-[42%]";
+    const badgeTextClass = "relative z-10 block truncate";
 
     return (
         <>
@@ -90,44 +71,41 @@ export const PokemonLayout: React.FC<{ data: CardData }> = ({ data }) => {
 
                 {/* EVOLUTION & SUBTYPE BADGES - Enhanced and redesigned */}
                 {(isStage1 || isStage2) && (
-                    <div className="absolute top-[12%] left-3 z-20">
+                    <div className={`${badgeContainerClass} top-[21%]`}>
                         <div className="relative">
-                            {/* Glow effect */}
-                            <div className="absolute inset-0 bg-yellow-400 blur-md opacity-50 rounded"></div>
-                            {/* Badge */}
-                            <div className="relative bg-gradient-to-br from-yellow-300 via-yellow-400 to-amber-500 text-black font-black uppercase text-[11px] px-3 py-1.5 rounded-md shadow-xl border-2 border-yellow-200 tracking-wider">
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-white/20 rounded-md"></div>
-                                <span className="relative z-10 drop-shadow-sm">{isStage1 ? 'STAGE 1' : 'STAGE 2'}</span>
+                            <div className="absolute inset-x-3 -top-1 bottom-0 rounded-[10px] bg-amber-300/40 blur-md"></div>
+                            <div className="absolute inset-0 rounded-[12px] border border-yellow-100/60 bg-gradient-to-b from-white/20 to-transparent opacity-80"></div>
+                            <div className="relative overflow-hidden rounded-[12px] border-[1.5px] border-[#f7e7a2] bg-gradient-to-br from-[#fff3b8] via-[#dcb24d] to-[#7f5319] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.22em] text-[#2f1800] shadow-[0_10px_18px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.65),inset_0_-2px_4px_rgba(92,53,8,0.35)]">
+                                <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.34)_0%,rgba(255,255,255,0)_34%,rgba(80,40,0,0.15)_100%)]"></div>
+                                <div className="absolute left-2 right-2 top-[1px] h-[1px] bg-white/80"></div>
+                                <div className="absolute bottom-[2px] left-2 right-2 h-[1px] bg-black/20"></div>
+                                <span className={`${badgeTextClass} drop-shadow-[0_1px_0_rgba(255,248,214,0.75)]`}>{subtypeLabel}</span>
                             </div>
                         </div>
                     </div>
                 )}
 
                 {isVMAX && (
-                    <div className="absolute top-[10%] left-2 z-20">
+                    <div className="absolute top-[20%] left-2 z-30 max-w-[46%]">
                         <div className="relative">
-                            {/* Animated glow effect */}
-                            <div className="absolute inset-0 bg-gradient-to-r from-red-500 via-pink-500 to-purple-500 blur-lg opacity-60 rounded-md animate-pulse"></div>
-                            {/* Badge */}
-                            <div className="relative bg-gradient-to-r from-red-600 via-pink-600 to-purple-600 text-white font-black italic text-[14px] px-4 py-2 rounded-lg shadow-2xl border-2 border-white/60 overflow-hidden">
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-white/10"></div>
-                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer"></div>
-                                <span className="relative z-10 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">VMAX</span>
+                            <div className="absolute inset-0 rounded-[14px] bg-[radial-gradient(circle_at_25%_50%,rgba(255,173,84,0.45),transparent_45%),radial-gradient(circle_at_80%_50%,rgba(255,64,129,0.45),transparent_42%)] blur-md opacity-90"></div>
+                            <div className="relative overflow-hidden rounded-[14px] border border-[#ffd39f] bg-[linear-gradient(135deg,#5d120f_0%,#a1181b_22%,#f05a28_48%,#f7b34a_62%,#74151d_100%)] px-4 py-2 text-[11px] font-black uppercase tracking-[0.24em] text-[#fff3d6] shadow-[0_12px_24px_rgba(59,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.35),inset_0_-2px_6px_rgba(45,0,0,0.35)]">
+                                <div className="absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.24)_0%,rgba(255,255,255,0)_26%,rgba(255,0,98,0.12)_60%,rgba(0,0,0,0.2)_100%)]"></div>
+                                <div className="absolute inset-y-0 left-[10px] w-[1px] bg-white/20"></div>
+                                <div className="absolute inset-y-0 right-[10px] w-[1px] bg-black/15"></div>
+                                <span className={`${badgeTextClass} drop-shadow-[0_2px_4px_rgba(68,0,0,0.55)]`}>{subtypeLabel}</span>
                             </div>
                         </div>
                     </div>
                 )}
 
                 {isRadiant && (
-                    <div className="absolute top-[12%] left-3 z-20">
+                    <div className={`${badgeContainerClass} top-[21%]`}>
                         <div className="relative">
-                            {/* Rainbow glow effect */}
-                            <div className="absolute inset-0 bg-gradient-to-r from-yellow-300 via-pink-300 to-cyan-300 blur-md opacity-60 rounded animate-pulse"></div>
-                            {/* Badge */}
-                            <div className="relative bg-gradient-to-r from-yellow-200 via-pink-200 to-cyan-200 text-black font-bold uppercase text-[10px] px-3 py-1.5 rounded-md shadow-xl border-2 border-white tracking-widest overflow-hidden">
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-white/20"></div>
-                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent animate-shimmer"></div>
-                                <span className="relative z-10 drop-shadow-sm">✦ RADIANT ✦</span>
+                            <div className="absolute inset-0 rounded-[12px] bg-[conic-gradient(from_160deg,rgba(255,230,120,0.58),rgba(255,148,196,0.45),rgba(107,229,255,0.48),rgba(255,230,120,0.58))] blur-md opacity-70"></div>
+                            <div className="relative overflow-hidden rounded-[12px] border border-white/70 bg-[linear-gradient(135deg,rgba(255,248,194,0.96)_0%,rgba(255,217,126,0.96)_24%,rgba(255,179,205,0.92)_55%,rgba(156,241,255,0.92)_100%)] px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.24em] text-[#381600] shadow-[0_10px_18px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.7),inset_0_-2px_5px_rgba(118,56,0,0.22)]">
+                                <div className="absolute inset-0 bg-[linear-gradient(130deg,rgba(255,255,255,0.42)_0%,rgba(255,255,255,0)_30%,rgba(255,255,255,0.18)_68%,rgba(0,0,0,0.08)_100%)]"></div>
+                                <span className={`${badgeTextClass} drop-shadow-[0_1px_0_rgba(255,255,255,0.72)]`}>✦ {subtypeLabel} ✦</span>
                             </div>
                         </div>
                     </div>
@@ -135,9 +113,10 @@ export const PokemonLayout: React.FC<{ data: CardData }> = ({ data }) => {
 
                 {/* Basic badge - subtle indicator */}
                 {isBasic && !isVMAX && !isRadiant && (
-                    <div className="absolute top-[12%] left-3 z-20">
-                        <div className="bg-white/90 text-gray-800 font-bold uppercase text-[9px] px-2.5 py-1 rounded shadow-md border border-gray-300 backdrop-blur-sm">
-                            BASIC
+                    <div className="absolute top-[21%] left-3 z-30 max-w-[34%]">
+                        <div className="relative overflow-hidden rounded-[11px] border border-[#e5d7a1] bg-[linear-gradient(135deg,rgba(255,246,220,0.95)_0%,rgba(241,220,167,0.95)_100%)] px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.18em] text-[#463000] shadow-[0_6px_14px_rgba(0,0,0,0.22),inset_0_1px_0_rgba(255,255,255,0.65)]">
+                            <div className="absolute inset-0 bg-[linear-gradient(120deg,rgba(255,255,255,0.3)_0%,rgba(255,255,255,0)_38%,rgba(0,0,0,0.06)_100%)]"></div>
+                            <span className={`${badgeTextClass} text-[9px] drop-shadow-[0_1px_0_rgba(255,255,255,0.7)]`}>{subtypeLabel}</span>
                         </div>
                     </div>
                 )}
@@ -145,16 +124,16 @@ export const PokemonLayout: React.FC<{ data: CardData }> = ({ data }) => {
                 {/* Header Section - Enhanced with better shadows */}
                 <div className="relative z-10 px-5 pt-3 pb-8 bg-gradient-to-b from-black/70 via-black/50 to-transparent">
                     <div className="flex justify-between items-start">
-                        <div className="flex flex-col">
+                        <div className="flex flex-col min-w-0 flex-1 pr-3">
                             <span className="text-[10px] font-bold text-yellow-200 uppercase tracking-wide drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">
-                                {hasEvolution && data.evolvesFrom ? `Evolves from ${data.evolvesFrom}` : (isBasic ? '' : '')}
+                                {hasEvolution && data.evolvesFrom ? `前身：${data.evolvesFrom}` : (isBasic ? '' : '')}
                             </span>
-                            <h1 className="text-3xl font-bold text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.9)] mt-0.5 font-heading tracking-tight leading-none">
+                            <h1 className="text-[30px] font-bold text-white drop-shadow-[0_3px_8px_rgba(0,0,0,0.9)] mt-0.5 font-heading tracking-tight leading-[0.9] break-words">
                                 {data.name}
                             </h1>
                         </div>
 
-                        <div className="flex items-center gap-1.5 self-center mt-2 bg-black/30 px-2 py-1 rounded-lg backdrop-blur-sm border border-white/20">
+                        <div className="flex items-center gap-1.5 self-start mt-2 bg-black/30 px-2 py-1 rounded-lg backdrop-blur-sm border border-white/20 shrink-0">
                             <span className="text-[11px] font-bold text-yellow-200 drop-shadow-md pt-1">HP</span>
                             <span className="text-[28px] font-bold text-white drop-shadow-lg leading-none mr-0.5">{data.hp}</span>
                             <div className="relative z-20 flex items-center justify-center">
@@ -217,9 +196,9 @@ export const PokemonLayout: React.FC<{ data: CardData }> = ({ data }) => {
                     {isVMAX && (
                         <div className="absolute bottom-1 right-1 left-1 bg-gradient-to-r from-gray-900 to-black border-2 border-red-600/50 rounded-md p-1.5 flex gap-2 items-center shadow-xl mt-2 z-20 relative overflow-hidden">
                             <div className="absolute inset-0 bg-gradient-to-t from-red-900/20 to-transparent"></div>
-                            <div className="text-white text-[9px] font-black px-1.5 uppercase italic bg-red-600 rounded relative z-10">VMAX RULE</div>
+                            <div className="text-white text-[9px] font-black px-1.5 uppercase italic bg-red-600 rounded relative z-10">爆表规条</div>
                             <p className="text-[8px] font-medium text-white leading-tight relative z-10">
-                                When your Pokémon VMAX is Knocked Out, your opponent takes 3 Prize cards.
+                                爆表仔被击倒时，对手额外收 1 张奖赏卡。
                             </p>
                         </div>
                     )}
@@ -270,7 +249,7 @@ export const PokemonLayout: React.FC<{ data: CardData }> = ({ data }) => {
                                 <div className="absolute inset-0 bg-gradient-to-b from-white/30 to-transparent"></div>
                                 <span className="relative z-10">Illus. {data.illustrator}</span>
                             </div>
-                            <span className="text-[7px] text-white/80 drop-shadow-sm">©2024 Pokémon / Nintendo / Creatures / GAME FREAK</span>
+                            <span className="text-[7px] text-white/80 drop-shadow-sm">©2024 Pokecard Studio</span>
                         </div>
                         <div className="flex items-center gap-1.5 bg-white/10 px-2 py-1 rounded-md">
                             {data.setSymbolImage ? (

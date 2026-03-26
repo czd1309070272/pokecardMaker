@@ -43,7 +43,7 @@ export const EnergyLayout: React.FC<{ data: CardData }> = ({ data }) => {
             {/* Bottom Metal Bar */}
             <div className="relative z-20 h-[8%] bg-gradient-to-t from-[#d1d5db] via-[#f3f4f6] to-[#9ca3af] flex items-center justify-between px-4 border-t-2 border-white/50">
                     <span className="text-[9px] font-bold text-gray-500">
-                        ©2024 Pokémon / Nintendo / Creatures / GAME FREAK
+                        ©2024 Pokecard Studio
                     </span>
                     <div className="opacity-90 drop-shadow-sm">
                         <EnergyIcon type={data.type} size={22} />

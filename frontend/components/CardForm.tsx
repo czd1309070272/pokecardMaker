@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { CardData, Supertype, INITIAL_CARD_DATA, User } from '../types';
+import { CardData, Supertype, INITIAL_CARD_DATA, User, ElementType, TrainerType } from '../types';
 import { generateCardData } from '../services/geminiService';
 import { SparkleBurst } from './Effects';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -31,6 +31,7 @@ import { FormStats } from './card-form/FormStats';
 import { FormDetail } from './card-form/FormDetail';
 import { useCardDownload } from '../hooks/useCardDownload';
 import { ActionDialog, ActionDialogOption } from './ActionDialog';
+import { normalizeRarity } from '../lib/rarity';
 
 interface CardFormProps {
   data: CardData;
@@ -38,6 +39,7 @@ interface CardFormProps {
   onAddToCart: (card: CardData) => void;
   onSave: (card: CardData) => Promise<void>;
   onPublish: (card: CardData) => void;
+  onUpdateUserCoins: (coins: number) => void;
   addNotification: (type: 'success' | 'error' | 'info', message: string) => void;
   user: User | null;
   onLoginRequired: () => void;
@@ -46,6 +48,139 @@ interface CardFormProps {
 }
 
 type Tab = 'basics' | 'artwork' | 'combat' | 'stats' | 'detail';
+
+const normalizeSupertype = (value: unknown): Supertype => {
+  if (value === Supertype.Trainer || value === 'Trainer') return Supertype.Trainer;
+  if (value === Supertype.Energy || value === 'Energy') return Supertype.Energy;
+  return Supertype.Pokemon;
+};
+
+const normalizeRules = (rules: unknown): string[] => {
+  if (!Array.isArray(rules)) return [];
+  return rules
+    .map((rule) => (typeof rule === 'string' ? rule : String(rule ?? '')).trim())
+    .filter(Boolean);
+};
+
+const normalizeAttacks = (attacks: unknown): CardData['attacks'] => {
+  if (!Array.isArray(attacks)) return [];
+  return attacks
+    .filter((attack): attack is NonNullable<CardData['attacks']>[number] => Boolean(attack))
+    .map((attack, index) => ({
+      ...attack,
+      id: attack.id || `attack-${Date.now()}-${index}`,
+      cost: Array.isArray(attack.cost) ? [...attack.cost] : [],
+    }));
+};
+
+const createCardForSupertype = (
+  supertype: Supertype,
+  source?: Partial<CardData>,
+): CardData => {
+  const normalizedAttacks = normalizeAttacks(source?.attacks);
+  const meta = {
+    id: source?.id,
+    name: source?.name ?? (supertype === Supertype.Pokemon ? INITIAL_CARD_DATA.name : ''),
+    image:
+      source?.image ??
+      (supertype === Supertype.Pokemon ? INITIAL_CARD_DATA.image : ''),
+    holoPattern: source?.holoPattern ?? INITIAL_CARD_DATA.holoPattern,
+    illustrator: source?.illustrator ?? INITIAL_CARD_DATA.illustrator,
+    setNumber: source?.setNumber ?? INITIAL_CARD_DATA.setNumber,
+    rarity: normalizeRarity(source?.rarity, INITIAL_CARD_DATA.rarity),
+    regulationMark: source?.regulationMark ?? INITIAL_CARD_DATA.regulationMark,
+    setSymbolImage: source?.setSymbolImage,
+    zoom: typeof source?.zoom === 'number' ? source.zoom : INITIAL_CARD_DATA.zoom,
+    xOffset: typeof source?.xOffset === 'number' ? source.xOffset : INITIAL_CARD_DATA.xOffset,
+    yOffset: typeof source?.yOffset === 'number' ? source.yOffset : INITIAL_CARD_DATA.yOffset,
+    likes: source?.likes,
+    isLiked: source?.isLiked,
+    isPublic: source?.isPublic,
+    status: source?.status,
+    publishedAt: source?.publishedAt,
+    createdAt: source?.createdAt,
+    updatedAt: source?.updatedAt,
+    authorName: source?.authorName,
+  };
+
+  if (supertype === Supertype.Trainer) {
+    return {
+      ...INITIAL_CARD_DATA,
+      ...meta,
+      supertype: Supertype.Trainer,
+      hp: '',
+      type: INITIAL_CARD_DATA.type,
+      subtype: '',
+      evolvesFrom: undefined,
+      attacks: [],
+      weakness: undefined,
+      resistance: undefined,
+      retreatCost: 0,
+      pokedexEntry: '',
+      dexSpecies: '',
+      dexHeight: '',
+      dexWeight: '',
+      trainerType: source?.trainerType ?? TrainerType.Item,
+      rules: normalizeRules(source?.rules),
+    };
+  }
+
+  if (supertype === Supertype.Energy) {
+    return {
+      ...INITIAL_CARD_DATA,
+      ...meta,
+      supertype: Supertype.Energy,
+      hp: '',
+      type: source?.type ?? ElementType.Colorless,
+      subtype: '',
+      evolvesFrom: undefined,
+      attacks: [],
+      weakness: undefined,
+      resistance: undefined,
+      retreatCost: 0,
+      pokedexEntry: '',
+      dexSpecies: '',
+      dexHeight: '',
+      dexWeight: '',
+      trainerType: undefined,
+      rules: normalizeRules(source?.rules),
+    };
+  }
+
+  return {
+    ...INITIAL_CARD_DATA,
+    ...meta,
+    supertype: Supertype.Pokemon,
+    hp: source?.hp ?? INITIAL_CARD_DATA.hp,
+    type: source?.type ?? INITIAL_CARD_DATA.type,
+    subtype: source?.subtype ?? INITIAL_CARD_DATA.subtype,
+    evolvesFrom: source?.evolvesFrom || undefined,
+    attacks: normalizedAttacks.length ? normalizedAttacks : normalizeAttacks(INITIAL_CARD_DATA.attacks),
+    weakness: source?.weakness ?? INITIAL_CARD_DATA.weakness,
+    resistance: source?.resistance ?? INITIAL_CARD_DATA.resistance,
+    retreatCost: typeof source?.retreatCost === 'number' ? source.retreatCost : INITIAL_CARD_DATA.retreatCost,
+    pokedexEntry: source?.pokedexEntry ?? INITIAL_CARD_DATA.pokedexEntry,
+    dexSpecies: source?.dexSpecies ?? INITIAL_CARD_DATA.dexSpecies,
+    dexHeight: source?.dexHeight ?? INITIAL_CARD_DATA.dexHeight,
+    dexWeight: source?.dexWeight ?? INITIAL_CARD_DATA.dexWeight,
+    trainerType: undefined,
+    rules: [],
+  };
+};
+
+const sanitizeCardForSupertype = (
+  card: Partial<CardData> | CardData,
+  fallbackSupertype?: Supertype,
+): CardData => {
+  const supertype = normalizeSupertype(card.supertype ?? fallbackSupertype);
+  return createCardForSupertype(supertype, card);
+};
+
+const createEmptyCardCache = (source?: Partial<CardData>): Partial<Record<Supertype, CardData>> => ({
+  [Supertype.Pokemon]: createCardForSupertype(Supertype.Pokemon, source?.supertype === Supertype.Pokemon ? source : undefined),
+  [Supertype.Trainer]: createCardForSupertype(Supertype.Trainer, source?.supertype === Supertype.Trainer ? source : undefined),
+  [Supertype.Energy]: createCardForSupertype(Supertype.Energy, source?.supertype === Supertype.Energy ? source : undefined),
+});
 
 const NavItem = React.memo(({ id, icon: Icon, label, activeTab, setActiveTab }: { id: Tab, icon: any, label: string, activeTab: Tab, setActiveTab: (id: Tab) => void }) => (
     <button
@@ -65,11 +200,13 @@ const NavItem = React.memo(({ id, icon: Icon, label, activeTab, setActiveTab }: 
 ));
 
 export const CardForm: React.FC<CardFormProps> = ({ 
-    data, onChange, onAddToCart, onSave, onPublish, addNotification, 
+    data, onChange, onAddToCart, onSave, onPublish, onUpdateUserCoins, addNotification, 
     user, onLoginRequired, isGeneratingImage, setIsGeneratingImage 
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>('basics');
   const [cardTextPrompt, setCardTextPrompt] = useState('');
+  const { t, language } = useLanguage();
+  const [cardTextLanguage, setCardTextLanguage] = useState<'en' | 'zh-Hant'>(() => language === 'en' ? 'en' : 'zh-Hant');
   const [isGenerating, setIsGenerating] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const [cartBurst, setCartBurst] = useState(0);
@@ -77,10 +214,47 @@ export const CardForm: React.FC<CardFormProps> = ({
   const [isClearDialogOpen, setIsClearDialogOpen] = useState(false);
   
   const jsonInputRef = useRef<HTMLInputElement>(null);
-  const imageCache = useRef<Record<string, string | undefined>>({});
+  const cardCache = useRef<Partial<Record<Supertype, CardData>>>(createEmptyCardCache(data));
   
-  const { t } = useLanguage();
   const { isDownloading, handleDownload } = useCardDownload(addNotification, t, data.name);
+
+  const commitCardChange = useCallback((nextCard: CardData) => {
+    const sanitized = sanitizeCardForSupertype(nextCard);
+    cardCache.current[sanitized.supertype] = sanitized;
+    onChange(sanitized);
+  }, [onChange]);
+
+  const buildCleanGeneratedCard = useCallback((generatedData: Partial<CardData>): CardData => {
+    const nextSupertype = normalizeSupertype(generatedData.supertype ?? data.supertype);
+    const baseCard = sanitizeCardForSupertype(
+      nextSupertype === data.supertype ? data : (cardCache.current[nextSupertype] ?? { supertype: nextSupertype }),
+      nextSupertype,
+    );
+
+    return sanitizeCardForSupertype({
+      ...baseCard,
+      ...generatedData,
+      id: data.id,
+      supertype: nextSupertype,
+    }, nextSupertype);
+  }, [data]);
+
+  useEffect(() => {
+    setCardTextLanguage(language === 'en' ? 'en' : 'zh-Hant');
+  }, [language]);
+
+  const isEnergyCard = data.supertype === Supertype.Energy;
+
+  const aiPromptPlaceholder = (() => {
+    if (isEnergyCard) return t('placeholder.ai_disabled_energy');
+    if (data.supertype === Supertype.Trainer) return t('placeholder.ai_prompt_trainer');
+    return t('placeholder.ai_prompt_pokemon');
+  })();
+
+  useEffect(() => {
+    const supertype = normalizeSupertype(data.supertype);
+    cardCache.current[supertype] = sanitizeCardForSupertype(data, supertype);
+  }, [data]);
 
   // Timer for cooldowns
   useEffect(() => {
@@ -93,21 +267,13 @@ export const CardForm: React.FC<CardFormProps> = ({
 
   // Main change handler passed down to sub-forms
   const handleChange = useCallback((field: keyof CardData, value: any) => {
-    onChange({ ...data, [field]: value });
-  }, [data, onChange]);
+    commitCardChange({ ...data, [field]: value });
+  }, [commitCardChange, data]);
 
   const handleSupertypeChange = (newType: Supertype) => {
-    imageCache.current[data.supertype] = data.image;
-    let nextImage = imageCache.current[newType];
-
-    if (nextImage === undefined) {
-        if (newType === Supertype.Pokemon) {
-             nextImage = INITIAL_CARD_DATA.image;
-        } else {
-            nextImage = ''; 
-        }
-    }
-    onChange({ ...data, supertype: newType, image: nextImage });
+    cardCache.current[data.supertype] = sanitizeCardForSupertype(data, data.supertype);
+    const cachedCard = cardCache.current[newType] ?? createCardForSupertype(newType);
+    commitCardChange(cachedCard);
   };
 
   const handleClear = useCallback(() => {
@@ -116,8 +282,8 @@ export const CardForm: React.FC<CardFormProps> = ({
             label: t('dialog.clear_confirm'),
             variant: 'danger',
             onClick: () => {
-                imageCache.current = {};
-                onChange({ ...INITIAL_CARD_DATA, attacks: [] });
+                cardCache.current = createEmptyCardCache();
+                commitCardChange(createCardForSupertype(Supertype.Pokemon));
                 addNotification('info', t('msg.cleared'));
                 setIsClearDialogOpen(false);
             },
@@ -129,7 +295,7 @@ export const CardForm: React.FC<CardFormProps> = ({
         },
     ]);
     setIsClearDialogOpen(true);
-  }, [onChange, addNotification, t]);
+  }, [addNotification, commitCardChange, t]);
 
   const handleJsonExport = useCallback(() => {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
@@ -139,8 +305,8 @@ export const CardForm: React.FC<CardFormProps> = ({
     document.body.appendChild(downloadAnchorNode);
     downloadAnchorNode.click();
     downloadAnchorNode.remove();
-    addNotification('success', 'JSON exported successfully.');
-  }, [data, addNotification]);
+    addNotification('success', t('msg.json_exported'));
+  }, [data, addNotification, t]);
 
   const handleJsonImport = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -150,46 +316,53 @@ export const CardForm: React.FC<CardFormProps> = ({
         try {
             const json = JSON.parse(event.target?.result as string);
             if (json && json.supertype) {
-                imageCache.current[json.supertype] = json.image;
-                onChange(json);
+                const importedCard = sanitizeCardForSupertype(json);
+                cardCache.current[importedCard.supertype] = importedCard;
+                commitCardChange(importedCard);
                 addNotification('success', t('msg.imported'));
             } else {
-                addNotification('error', 'Invalid card JSON format.');
+                addNotification('error', t('msg.invalid_card_json'));
             }
         } catch (err) {
-            addNotification('error', 'Failed to parse JSON file.');
+            addNotification('error', t('msg.json_parse_failed'));
         }
         if (jsonInputRef.current) jsonInputRef.current.value = '';
     };
     reader.readAsText(file);
-  }, [onChange, addNotification, t]);
+  }, [addNotification, commitCardChange, t]);
 
   const handleGenerateCardText = async () => {
+    if (isEnergyCard) {
+        addNotification('info', t('msg.ai_energy_unsupported'));
+        return;
+    }
     if (!user) { onLoginRequired(); return; }
-    const finalPrompt = cardTextPrompt || "Create a completely random, creative, and balanced Pokemon card concept.";
+    const finalPrompt = cardTextPrompt || t('placeholder.random_card_prompt');
     
     if (cooldown > 0) {
-        addNotification('info', `Please wait ${cooldown}s before generating again.`);
+        addNotification('info', t('msg.wait_seconds').replace('{seconds}', String(cooldown)));
         return;
     }
     
     setIsGenerating(true);
-    addNotification('info', cardTextPrompt ? `Generating concept for: ${cardTextPrompt}...` : 'Generating random card concept...');
+    addNotification(
+      'info',
+      cardTextPrompt
+        ? t('msg.generating_prompt').replace('{prompt}', cardTextPrompt)
+        : t('msg.generating_random')
+    );
     
     try {
-        const generatedData = await generateCardData(finalPrompt);
-        const mergedData = { 
-            ...data, 
-            ...generatedData, 
-            id: data.id,
-            image: data.image // Preserve image
-        };
-        onChange(mergedData);
+        const result = await generateCardData(finalPrompt, cardTextLanguage, data);
+        const generatedData = result.card;
+        const mergedData = buildCleanGeneratedCard(generatedData);
+        commitCardChange(mergedData);
+        onUpdateUserCoins(result.remainingCoins);
         setCooldown(10); 
         addNotification('success', t('msg.gen_text'));
         setCardTextPrompt(''); 
     } catch (error: any) {
-        addNotification('error', error.message || 'Failed to generate text.');
+        addNotification('error', error.message || t('msg.generate_text_failed'));
     } finally {
         setIsGenerating(false);
     }
@@ -218,7 +391,7 @@ export const CardForm: React.FC<CardFormProps> = ({
                     disabled={isDownloading}
                     className="flex-1 lg:flex-none lg:aspect-square bg-[#161b22] hover:bg-[#21262d] text-blue-400 border border-gray-700 hover:border-blue-500/50 py-3 lg:p-2.5 rounded-lg font-bold text-xs flex items-center justify-center transition-all disabled:opacity-50 hover:-translate-y-0.5 active:translate-y-0 shadow-sm"
                     title={t('btn.download')}
-                    aria-label="Download Card"
+                    aria-label={t('btn.download')}
                 >
                     {isDownloading ? <RefreshIcon className="w-5 h-5 lg:w-4 lg:h-4 animate-spin" /> : <DownloadIcon className="w-5 h-5 lg:w-4 lg:h-4" />}
                 </button>
@@ -314,17 +487,35 @@ export const CardForm: React.FC<CardFormProps> = ({
                         value={cardTextPrompt}
                         onChange={(e) => setCardTextPrompt(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleGenerateCardText()}
-                        placeholder="Theme (e.g. Fire Dragon) or empty for Random..."
-                        className="w-full bg-[#050608] border border-gray-700 rounded-md py-2 pl-9 pr-3 text-sm text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none placeholder-gray-600 transition-all shadow-inner focus:shadow-[0_0_10px_rgba(168,85,247,0.2)]"
+                        disabled={isEnergyCard}
+                        placeholder={aiPromptPlaceholder}
+                        className={`w-full bg-[#050608] border border-gray-700 rounded-md py-2 pl-9 pr-3 text-sm text-white outline-none placeholder-gray-600 transition-all shadow-inner ${isEnergyCard ? 'cursor-not-allowed opacity-50' : 'focus:border-purple-500 focus:ring-1 focus:ring-purple-500 focus:shadow-[0_0_10px_rgba(168,85,247,0.2)]'}`}
                      />
+                 </div>
+                 <div className="relative shrink-0">
+                     <select
+                        value={cardTextLanguage}
+                        onChange={(e) => setCardTextLanguage(e.target.value as 'en' | 'zh-Hant')}
+                        disabled={isEnergyCard}
+                        aria-label={t('label.ai_language')}
+                        className={`h-full w-[56px] appearance-none bg-[#050608] border border-gray-700 rounded-md py-2 pl-3 pr-8 text-xs font-semibold text-white outline-none transition-all shadow-inner ${isEnergyCard ? 'cursor-not-allowed opacity-50' : 'focus:border-purple-500 focus:ring-1 focus:ring-purple-500 cursor-pointer'}`}
+                     >
+                        <option value="zh-Hant">{t('option.lang_zh_hant')}</option>
+                        <option value="en">{t('option.lang_en')}</option>
+                     </select>
+                     <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-500">
+                        <svg width="10" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                     </div>
                  </div>
                  <button 
                     onClick={() => handleGenerateCardText()}
-                    disabled={isGenerating || cooldown > 0}
-                    className={`bg-[#6d28d9] hover:bg-[#5b21b6] text-white px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wide shadow-lg shadow-purple-900/20 active:scale-95 transition-all flex items-center gap-2 hover:shadow-[0_0_15px_rgba(147,51,234,0.4)] ${isGenerating || cooldown > 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={isEnergyCard || isGenerating || cooldown > 0}
+                    className={`bg-[#6d28d9] text-white px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wide shadow-lg shadow-purple-900/20 active:scale-95 transition-all flex items-center gap-2 ${isEnergyCard || isGenerating || cooldown > 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-[#5b21b6] hover:shadow-[0_0_15px_rgba(147,51,234,0.4)]'}`}
                  >
                      {isGenerating ? <RefreshIcon className="w-3 h-3 animate-spin" /> : <SparklesIcon className="w-3 h-3" />}
-                     <span className="hidden sm:inline">{cooldown > 0 ? `${cooldown}s` : 'GEN'}</span>
+                     <span className="hidden sm:inline">{cooldown > 0 ? `${cooldown}s` : t('btn.aigenerate')}</span>
                      {!isGenerating && cooldown === 0 && (
                         <div className="flex items-center gap-1 bg-black/20 px-1.5 py-0.5 rounded text-[10px] ml-1 border border-white/10">
                             <CoinIcon className="w-3 h-3 text-yellow-400" /> 1

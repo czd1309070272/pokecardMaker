@@ -1,11 +1,15 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { CardData, User } from '../types';
+import { CardComment, CardData, User } from '../types';
 import { CardPreview } from './CardPreview';
-import { CartIcon, EyeIcon, XIcon, HeartIcon, EditIcon } from './Icons';
+import { CartIcon, EyeIcon, XIcon, HeartIcon, EditIcon, TrashIcon, ArrowUpIcon, ArrowDownIcon } from './Icons';
 import { TiltCard } from './TiltCard';
 import { SparkleBurst } from './Effects';
 import { useLanguage } from '../contexts/LanguageContext';
+import { getRarityLabel } from '../lib/rarity';
+import { getSubtypeLabel } from '../lib/subtype';
+import { getAttributeLabel } from '../lib/attributes';
+import { createCardCommentOnServer, deleteCardCommentOnServer, fetchCardComments } from '../services/cardsService';
 
 interface BrowseProps {
     onAddToCart: (card: CardData) => void;
@@ -14,6 +18,7 @@ interface BrowseProps {
     onToggleLike: (id: string) => void;
     user: User | null;
     onLoginRequired: () => void;
+    addNotification: (type: 'success' | 'error' | 'info', message: string) => void;
 }
 
 // Helper component to scale the fixed-size CardPreview to fit its container
@@ -58,10 +63,30 @@ const ResponsiveCardContainer: React.FC<{ children: React.ReactNode }> = ({ chil
 
 type SortFilter = 'Trending' | 'Newest' | 'Top Rated';
 
-export const Browse: React.FC<BrowseProps> = ({ onAddToCart, onLoadCard, cards, onToggleLike, user, onLoginRequired }) => {
+export const Browse: React.FC<BrowseProps> = ({ onAddToCart, onLoadCard, cards, onToggleLike, user, onLoginRequired, addNotification }) => {
     const [selectedCard, setSelectedCard] = useState<CardData | null>(null);
     const [activeFilter, setActiveFilter] = useState<SortFilter>('Trending');
-    const { t } = useLanguage();
+    const [cardComments, setCardComments] = useState<Record<string, {
+        list: CardComment[];
+        page: number;
+        limit: number;
+        total: number;
+        hasMore: boolean;
+    }>>({});
+    const [isCommentsLoading, setIsCommentsLoading] = useState(false);
+    const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+    const [deletingCommentId, setDeletingCommentId] = useState<number | null>(null);
+    const [commentDraft, setCommentDraft] = useState('');
+    const [commentError, setCommentError] = useState<string | null>(null);
+    const [commentPage, setCommentPage] = useState(1);
+    const { t, language } = useLanguage();
+    const getSupertypeLabel = (supertype: CardData['supertype']) =>
+        supertype === 'Trainer'
+            ? t('supertype.trainer')
+            : supertype === 'Energy'
+                ? t('supertype.energy')
+                : t('supertype.pokemon');
+    const isAppraisedCard = (card: CardData) => Boolean(card.appraisal?.price && card.appraisal?.comment);
     
     // Track bursts for likes
     const [likeBursts, setLikeBursts] = useState<Record<string, number>>({});
@@ -77,6 +102,53 @@ export const Browse: React.FC<BrowseProps> = ({ onAddToCart, onLoadCard, cards, 
             }
         }
     }, [cards, selectedCard]);
+
+    useEffect(() => {
+        if (!selectedCard?.id) {
+            setCommentDraft('');
+            setCommentError(null);
+            setCommentPage(1);
+            return;
+        }
+        setCommentPage(1);
+    }, [selectedCard?.id]);
+
+    useEffect(() => {
+        if (!selectedCard?.id) {
+            return;
+        }
+        let cancelled = false;
+        setIsCommentsLoading(true);
+        setCommentError(null);
+
+        fetchCardComments(selectedCard.id, { page: commentPage, limit: 5 })
+            .then((result) => {
+                if (cancelled) return;
+                setCardComments((prev) => ({
+                    ...prev,
+                    [selectedCard.id!]: {
+                        list: result.comments,
+                        page: result.page,
+                        limit: result.limit,
+                        total: result.total,
+                        hasMore: result.hasMore,
+                    },
+                }));
+            })
+            .catch((error: any) => {
+                if (cancelled) return;
+                setCommentError(error?.message || t('comments.load_failed'));
+            })
+            .finally(() => {
+                if (!cancelled) {
+                    setIsCommentsLoading(false);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [selectedCard?.id, commentPage, t]);
 
     const handleLikeClick = (id: string | undefined) => {
         if (!id) return;
@@ -110,13 +182,101 @@ export const Browse: React.FC<BrowseProps> = ({ onAddToCart, onLoadCard, cards, 
         onLoadCard(card);
     };
 
+    const handleSubmitComment = async () => {
+        if (!selectedCard?.id) return;
+        if (!user) {
+            onLoginRequired();
+            return;
+        }
+
+        const content = commentDraft.trim();
+        if (!content) {
+            setCommentError(t('comments.empty_error'));
+            return;
+        }
+
+        setIsSubmittingComment(true);
+        setCommentError(null);
+        try {
+            await createCardCommentOnServer(selectedCard.id, content);
+            setCommentDraft('');
+            addNotification('success', t('comments.posted'));
+            setCommentPage(1);
+            const result = await fetchCardComments(selectedCard.id, { page: 1, limit: 5 });
+            setCardComments((prev) => ({
+                ...prev,
+                [selectedCard.id!]: {
+                    list: result.comments,
+                    page: result.page,
+                    limit: result.limit,
+                    total: result.total,
+                    hasMore: result.hasMore,
+                },
+            }));
+        } catch (error: any) {
+            const message = error?.message || t('comments.post_failed');
+            setCommentError(message);
+            addNotification('error', message);
+        } finally {
+            setIsSubmittingComment(false);
+        }
+    };
+
+    const handleDeleteComment = async (commentId: number) => {
+        if (!selectedCard?.id) return;
+        if (!user) {
+            onLoginRequired();
+            return;
+        }
+
+        setDeletingCommentId(commentId);
+        setCommentError(null);
+        try {
+            await deleteCardCommentOnServer(selectedCard.id, commentId);
+            addNotification('success', t('comments.deleted'));
+
+            const currentData = cardComments[selectedCard.id];
+            const shouldGoPrevPage =
+                currentData &&
+                currentData.page > 1 &&
+                currentData.list.length === 1;
+            const nextPage = shouldGoPrevPage ? currentData.page - 1 : (currentData?.page || commentPage);
+
+            if (nextPage !== commentPage) {
+                setCommentPage(nextPage);
+            } else {
+                const result = await fetchCardComments(selectedCard.id, { page: nextPage, limit: 5 });
+                setCardComments((prev) => ({
+                    ...prev,
+                    [selectedCard.id!]: {
+                        list: result.comments,
+                        page: result.page,
+                        limit: result.limit,
+                        total: result.total,
+                        hasMore: result.hasMore,
+                    },
+                }));
+            }
+        } catch (error: any) {
+            const message = error?.message || t('comments.delete_failed');
+            setCommentError(message);
+            addNotification('error', message);
+        } finally {
+            setDeletingCommentId(null);
+        }
+    };
+
     const getSortedCards = () => {
         const c = [...cards];
         switch (activeFilter) {
             case 'Top Rated':
                 return c.sort((a, b) => (b.likes || 0) - (a.likes || 0));
             case 'Newest':
-                return c.sort((a, b) => parseInt(b.id || '0') - parseInt(a.id || '0'));
+                return c.sort((a, b) => {
+                    const left = new Date((b as any).publishedAt || (b as any).created_at || 0).getTime();
+                    const right = new Date((a as any).publishedAt || (a as any).created_at || 0).getTime();
+                    return left - right;
+                });
             case 'Trending':
             default:
                 return c;
@@ -124,6 +284,12 @@ export const Browse: React.FC<BrowseProps> = ({ onAddToCart, onLoadCard, cards, 
     };
 
     const displayedCards = getSortedCards();
+    const selectedCommentsData = selectedCard?.id
+        ? cardComments[selectedCard.id]
+        : undefined;
+    const selectedComments = selectedCommentsData?.list || [];
+    const commentsCountLabel = t('comments.count').replace('{count}', String(selectedCommentsData?.total || 0));
+    const commentsPageLabel = t('comments.page').replace('{page}', String(selectedCommentsData?.page || 1));
 
     const filters: { key: SortFilter, label: string }[] = [
         { key: 'Trending', label: t('filter.trending') },
@@ -168,6 +334,11 @@ export const Browse: React.FC<BrowseProps> = ({ onAddToCart, onLoadCard, cards, 
                                      <ResponsiveCardContainer>
                                         <CardPreview data={card} />
                                      </ResponsiveCardContainer>
+                                     {isAppraisedCard(card) && (
+                                        <div className="absolute right-2 top-2 z-20 rounded-full border border-amber-400/25 bg-amber-500/18 px-2.5 py-1 text-[10px] font-bold text-amber-100 backdrop-blur-md shadow-lg">
+                                            已鑑定
+                                        </div>
+                                     )}
 
                                      {/* Hover Overlay - Only shows on desktop hover, on mobile we rely on clicking to view */}
                                      <div className="hidden md:flex absolute inset-0 bg-black/40 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-all duration-300 flex-col items-center justify-center gap-3 z-20">
@@ -208,6 +379,9 @@ export const Browse: React.FC<BrowseProps> = ({ onAddToCart, onLoadCard, cards, 
                                      <div className="overflow-hidden">
                                          <h3 className="font-bold text-white text-sm md:text-lg leading-tight truncate">{card.name}</h3>
                                          <p className="text-[10px] md:text-sm text-gray-500 truncate">Illus. {card.illustrator}</p>
+                                         {isAppraisedCard(card) && (
+                                            <p className="text-[10px] md:text-xs text-amber-300 truncate">已鑑定</p>
+                                         )}
                                      </div>
                                      <div className="flex md:flex-col items-center md:items-end justify-between md:justify-start gap-1">
                                           <span className="text-[10px] md:text-xs font-mono text-gray-600 bg-gray-900 px-1.5 md:px-2 py-0.5 rounded border border-gray-800">
@@ -242,7 +416,7 @@ export const Browse: React.FC<BrowseProps> = ({ onAddToCart, onLoadCard, cards, 
                         2. Use py-8 to give vertical breathing room.
                         3. Use ResponsiveCardContainer with max-width on mobile instead of fixed transform scale.
                      */}
-                     <div className="min-h-full w-full flex flex-col md:flex-row items-center justify-center p-4 py-12 md:p-8 gap-8 md:gap-12" onClick={e => e.stopPropagation()}>
+                    <div className="min-h-full w-full flex flex-col items-center justify-center p-4 py-12 md:flex-row md:items-start md:justify-center md:p-8 gap-8 md:gap-12" onClick={e => e.stopPropagation()}>
                          
                          {/* Close Button */}
                          <button 
@@ -254,7 +428,7 @@ export const Browse: React.FC<BrowseProps> = ({ onAddToCart, onLoadCard, cards, 
 
                          {/* Left: Card Preview */}
                          {/* Mobile: Width relative to screen, Max width constrained to ensure buttons fit below. Desktop: standard scale. */}
-                         <div className="w-[85vw] max-w-[420px] md:w-[420px] md:max-w-none flex-shrink-0 animate-in zoom-in-90 duration-300">
+                        <div className="w-[85vw] max-w-[420px] md:sticky md:top-8 md:w-[420px] md:max-w-none flex-shrink-0 animate-in zoom-in-90 duration-300">
                              <TiltCard className="w-full aspect-[420/588] rounded-[24px] shadow-2xl shadow-black/50" maxAngle={20}>
                                  <ResponsiveCardContainer>
                                      <CardPreview data={selectedCard} />
@@ -267,13 +441,24 @@ export const Browse: React.FC<BrowseProps> = ({ onAddToCart, onLoadCard, cards, 
                              <div>
                                  <h2 className="text-3xl md:text-4xl font-bold text-white mb-2 font-heading">{selectedCard.name}</h2>
                                  <div className="flex items-center gap-3 text-gray-400">
-                                     <span className="px-3 py-1 bg-gray-800 rounded-full text-xs md:text-sm font-medium border border-gray-700">{selectedCard.supertype}</span>
-                                     <span className="px-3 py-1 bg-gray-800 rounded-full text-xs md:text-sm font-medium border border-gray-700">{selectedCard.subtype}</span>
-                                     <span className="px-3 py-1 bg-gray-800 rounded-full text-xs md:text-sm font-medium border border-gray-700">{selectedCard.rarity}</span>
+                                     <span className="px-3 py-1 bg-gray-800 rounded-full text-xs md:text-sm font-medium border border-gray-700">{getSupertypeLabel(selectedCard.supertype)}</span>
+                                     <span className="px-3 py-1 bg-gray-800 rounded-full text-xs md:text-sm font-medium border border-gray-700">
+                                         {getSubtypeLabel(selectedCard.subtype, language)}
+                                     </span>
+                                     <span className="px-3 py-1 bg-gray-800 rounded-full text-xs md:text-sm font-medium border border-gray-700">
+                                         {getRarityLabel(selectedCard.rarity, language)}
+                                     </span>
+                                     {isAppraisedCard(selectedCard) && (
+                                        <span className="px-3 py-1 bg-amber-500/15 rounded-full text-xs md:text-sm font-medium border border-amber-500/30 text-amber-200">已鑑定</span>
+                                     )}
                                  </div>
                              </div>
 
                              <div className="bg-[#161b22] p-6 rounded-2xl border border-gray-800 space-y-4 shadow-lg">
+                                 <div className="flex justify-between border-b border-gray-700 pb-2">
+                                     <span className="text-gray-500 text-sm uppercase font-bold">{t('card.creator')}</span>
+                                     <span className="text-white font-medium">{selectedCard.authorName || t('card.unknown_creator')}</span>
+                                 </div>
                                  <div className="flex justify-between border-b border-gray-700 pb-2">
                                      <span className="text-gray-500 text-sm uppercase font-bold">Artist</span>
                                      <span className="text-white font-medium">{selectedCard.illustrator}</span>
@@ -284,14 +469,121 @@ export const Browse: React.FC<BrowseProps> = ({ onAddToCart, onLoadCard, cards, 
                                  </div>
                                  <div className="flex justify-between border-b border-gray-700 pb-2">
                                      <span className="text-gray-500 text-sm uppercase font-bold">Type</span>
-                                     <span className="text-white font-medium">{selectedCard.type}</span>
+                                     <span className="text-white font-medium">{getAttributeLabel(selectedCard.type)}</span>
                                  </div>
                                  <div className="pt-2">
-                                     <span className="text-gray-500 text-sm uppercase font-bold block mb-2">Description</span>
+                                     <span className="text-gray-500 text-sm uppercase font-bold block mb-2">{t('label.dexentry')}</span>
                                      <p className="text-gray-300 text-sm italic leading-relaxed">
-                                         {selectedCard.pokedexEntry || "No pokedex entry available."}
+                                         {selectedCard.pokedexEntry || t('msg.no_lore_entry')}
                                      </p>
                                  </div>
+                                 {isAppraisedCard(selectedCard) && (
+                                    <div className="pt-2 border-t border-gray-700">
+                                        <span className="text-gray-500 text-sm uppercase font-bold block mb-2">Appraisal</span>
+                                        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 space-y-2">
+                                            <div className="text-2xl font-black text-amber-300">{selectedCard.appraisal?.price}</div>
+                                            <p className="text-sm leading-relaxed text-amber-100/90">{selectedCard.appraisal?.comment}</p>
+                                        </div>
+                                    </div>
+                                 )}
+                             </div>
+
+                             <div className="bg-[#161b22] p-6 rounded-2xl border border-gray-800 shadow-lg space-y-4">
+                                 <div className="flex items-center justify-between gap-3">
+                                     <div>
+                                         <span className="text-gray-500 text-sm uppercase font-bold block">{t('comments.title')}</span>
+                                         <p className="text-xs text-gray-500 mt-1">
+                                             {(selectedCommentsData?.total || 0) > 0
+                                                ? commentsCountLabel
+                                                : t('comments.empty')}
+                                         </p>
+                                     </div>
+                                     {selectedCommentsData && selectedCommentsData.total > 0 && (
+                                        <span className="text-xs text-gray-500">{commentsPageLabel}</span>
+                                     )}
+                                 </div>
+
+                                 <div className="space-y-3">
+                                     <textarea
+                                        value={commentDraft}
+                                        onChange={(e) => setCommentDraft(e.target.value)}
+                                        maxLength={500}
+                                        placeholder={user ? t('comments.placeholder') : t('comments.login_prompt')}
+                                        className="w-full min-h-[96px] rounded-xl border border-gray-700 bg-[#0d1117] px-4 py-3 text-sm text-white outline-none transition-colors placeholder:text-gray-500 focus:border-blue-500 disabled:cursor-not-allowed disabled:opacity-70"
+                                        disabled={isSubmittingComment}
+                                     />
+                                     <div className="flex items-center justify-between gap-3">
+                                         <span className="text-xs text-gray-500">{commentDraft.trim().length}/500</span>
+                                         <button
+                                            onClick={handleSubmitComment}
+                                            disabled={isSubmittingComment}
+                                            className="rounded-full bg-blue-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-gray-700"
+                                         >
+                                            {isSubmittingComment ? t('comments.posting') : t('comments.submit')}
+                                         </button>
+                                     </div>
+                                     {commentError && <p className="text-sm text-red-300">{commentError}</p>}
+                                 </div>
+
+                                 <div className="space-y-3 border-t border-gray-700 pt-4">
+                                     {isCommentsLoading ? (
+                                        <p className="text-sm text-gray-400">{t('comments.loading')}</p>
+                                     ) : selectedComments.length === 0 ? (
+                                        <p className="text-sm text-gray-400">{t('comments.empty')}</p>
+                                     ) : (
+                                        selectedComments.map((comment) => (
+                                            <div key={comment.id} className="rounded-2xl border border-gray-800 bg-[#0d1117] px-4 py-3">
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        <span className="text-sm font-bold text-white">{comment.authorName}</span>
+                                                        {comment.isOwner && (
+                                                            <span className="rounded-full border border-blue-400/30 bg-blue-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-200">
+                                                                {t('comments.you_badge')}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex items-center gap-2 shrink-0">
+                                                        <span className="text-xs text-gray-500">
+                                                            {comment.createdAt ? new Date(comment.createdAt).toLocaleString('zh-HK') : ''}
+                                                        </span>
+                                                        {comment.canDelete && (
+                                                            <button
+                                                                onClick={() => handleDeleteComment(comment.id)}
+                                                                disabled={deletingCommentId === comment.id}
+                                                                className="rounded-full p-1 text-gray-500 transition-colors hover:bg-red-900/20 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
+                                                                title={t('comments.delete')}
+                                                            >
+                                                                <TrashIcon className="w-4 h-4" />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-gray-200">{comment.content}</p>
+                                            </div>
+                                        ))
+                                     )}
+                                 </div>
+
+                                 {selectedCommentsData && selectedCommentsData.total > 0 && (
+                                    <div className="flex items-center justify-between border-t border-gray-700 pt-4">
+                                        <button
+                                            onClick={() => setCommentPage((prev) => Math.max(prev - 1, 1))}
+                                            disabled={isCommentsLoading || (selectedCommentsData.page || 1) <= 1}
+                                            className="inline-flex items-center gap-2 rounded-full border border-gray-700 px-4 py-2 text-sm font-bold text-gray-200 transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
+                                        >
+                                            <ArrowUpIcon className="w-4 h-4" />
+                                            {t('comments.prev')}
+                                        </button>
+                                        <button
+                                            onClick={() => setCommentPage((prev) => prev + 1)}
+                                            disabled={isCommentsLoading || !selectedCommentsData.hasMore}
+                                            className="inline-flex items-center gap-2 rounded-full border border-gray-700 px-4 py-2 text-sm font-bold text-gray-200 transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
+                                        >
+                                            {t('comments.next')}
+                                            <ArrowDownIcon className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                 )}
                              </div>
 
                              <div className="flex gap-4 pt-2">

@@ -1,0 +1,58 @@
+import { PackItem } from '../types';
+
+export const initialMarketPacks: PackItem[] = [
+  {
+    id: 'neo-flare-vault',
+    name: 'Neo Flare Vault',
+    creator: 'Aster Blaze',
+    price: 18,
+    packCount: 6,
+    openedCount: 1,
+    theme: 'Fire Relics',
+    description: 'A single-purchase collector pack with molten legends, chrome foil customs, and one dangerous chase centerpiece.',
+    mood: 'Lava foil / collector drop',
+    cover: '',
+    tiers: ['SSR', 'SR', 'R'],
+    cards: [
+      { id: 'nfv-1', name: 'Obsidian Charflare', tier: 'SSR', accent: '#fb7185' },
+      { id: 'nfv-2', name: 'Voltmane Salamence', tier: 'SR', accent: '#f59e0b' },
+      { id: 'nfv-3', name: 'Ashcoil Fox', tier: 'R', accent: '#fdba74' },
+    ],
+  },
+  {
+    id: 'jade-mischief',
+    name: 'Jade Mischief Box',
+    creator: 'Mint Taro',
+    price: 12,
+    packCount: 5,
+    openedCount: 1,
+    theme: 'Forest Tricksters',
+    description: 'A one-off hand-packed box full of painterly green spirits, playful support cards, and lucky charm energy.',
+    mood: 'Painterly / lucky charm',
+    cover: '',
+    tiers: ['SR', 'R', 'C'],
+    cards: [
+      { id: 'jm-1', name: 'Mosswink Pixu', tier: 'SR', accent: '#86efac' },
+      { id: 'jm-2', name: 'Bamboo Snare', tier: 'R', accent: '#4ade80' },
+      { id: 'jm-3', name: 'Seed Sprint', tier: 'C', accent: '#d9f99d' },
+    ],
+  },
+  {
+    id: 'midnight-circuit',
+    name: 'Midnight Circuit',
+    creator: 'Neon K',
+    price: 22,
+    packCount: 4,
+    openedCount: 1,
+    theme: 'Cyber Arena',
+    description: 'A single cyber-night pack featuring glossy arena threats, electric overlays, and a premium chase finisher.',
+    mood: 'Arcade chrome / midnight drop',
+    cover: '',
+    tiers: ['SSR', 'SR'],
+    cards: [
+      { id: 'mc-1', name: 'Circuit Tyrant EX', tier: 'SSR', accent: '#60a5fa' },
+      { id: 'mc-2', name: 'Nullbyte Falcon', tier: 'SR', accent: '#38bdf8' },
+      { id: 'mc-3', name: 'Afterimage Battery', tier: 'SR', accent: '#c084fc' },
+    ],
+  },
+];

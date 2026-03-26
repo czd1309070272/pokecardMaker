@@ -44,7 +44,7 @@ export const FormStats: React.FC<FormStatsProps> = ({ data, onChange }) => {
                     </div>
             ) : (
                 <div className="p-4 bg-gray-800/50 rounded-lg text-center text-sm text-gray-500">
-                    No stats available for this card type.
+                    {t('msg.no_stats_for_type')}
                 </div>
             )}
         </div>

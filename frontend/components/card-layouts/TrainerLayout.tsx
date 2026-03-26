@@ -71,7 +71,7 @@ export const TrainerLayout: React.FC<{ data: CardData }> = ({ data }) => {
                         <div className="bg-white/80 px-1.5 py-0.5 text-[8px] font-bold rounded-sm text-gray-600 shadow-sm">
                             Illus. {data.illustrator}
                         </div>
-                        <span className="text-[8px] text-black/70 font-bold">©2024 Pokémon</span>
+                        <span className="text-[8px] text-black/70 font-bold">©2024 Pokecard Studio</span>
                     </div>
                     <div className="flex items-center gap-1">
                         <div className="bg-white text-black text-[9px] font-bold px-1 rounded border border-gray-400">{data.regulationMark || 'G'}</div>

@@ -2,7 +2,7 @@
   "key_pool": [
     {
       "provider": "openrouter",
-      "api_key": "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",
+      "api_key": "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",
       "base_url": "https://openrouter.ai/api/v1",
       "model": "openai/gpt-4o-mini",
       "label": "GPT-4o-Mini",
@@ -12,7 +12,7 @@
     },
     {
       "provider": "openrouter",
-      "api_key": "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",
+      "api_key": "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",
       "base_url": "https://openrouter.ai/api/v1",
       "model": "x-ai/grok-4-fast",
       "label": "grok-4.1-fast",
@@ -22,7 +22,7 @@
     },
     {
       "provider": "openrouter",
-      "api_key": "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",
+      "api_key": "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",
       "base_url": "https://openrouter.ai/api/v1",
       "model": "google/gemini-2.5-flash",
       "label": "gemini-2.5-flash",
@@ -34,8 +34,8 @@
       "provider": "dashscope",
       "api_key": "sk-8698d285b47941629ccf62a8eab54062",
       "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      "model": "qwen3.5-flash",
-      "label": "qwen3.5-flash",
+      "model": "qwen-flash",
+      "label": "qwen-flash",
       "desc" : "",
       "recommended": "True",
       "disabled": "False"

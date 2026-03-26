@@ -1,5 +1,5 @@
 {
   "name": "PokeMaker final",
-  "description": "A feature-rich Pokémon card creator clone with Gemini AI integration to generate card concepts and artwork instantly.",
+  "description": "A feature-rich Pokecard creator with AI-powered card concepts and artwork generation.",
   "requestFramePermissions": []
 }

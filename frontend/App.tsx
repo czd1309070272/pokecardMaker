@@ -5,6 +5,7 @@ import { CardForm } from './components/CardForm';
 import { CardPreview } from './components/CardPreview';
 import { LoginModal } from './components/LoginModal';
 import { Browse } from './components/Browse';
+import { PackBrowse } from './components/PackBrowse';
 import { Cart } from './components/Cart';
 import { Profile } from './components/Profile';
 import { BattleArena } from './components/BattleArena';
@@ -13,63 +14,24 @@ import { Recharge } from './components/Recharge';
 import { TiltCard } from './components/TiltCard';
 import { ToastContainer } from './components/Toast';
 import { ActionDialog, ActionDialogOption } from './components/ActionDialog';
-import { CardData, INITIAL_CARD_DATA, User, Notification, ElementType, Subtype, TrainerType, HoloPattern, Supertype } from './types';
+import { CardData, INITIAL_CARD_DATA, Notification, PurchasedPack, User } from './types';
+import { initialMarketPacks } from './data/mockPacks';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
-import { UserIcon } from './components/Icons';
+import { GlobeIcon, SparklesIcon, UserIcon } from './components/Icons';
 import { restoreCurrentUser } from './services/authService';
-import { deleteCardFromServer, fetchMyCards, saveCardToServer, updateCardOnServer } from './services/cardsService';
-import { applyCoinsToUser, rechargeCoins, spendCoins } from './services/walletService';
-
-// [待删除 Mock 数据] 后端接入后，删除此静态数组，改由 API 获取
-const MOCK_CARDS_INITIAL: CardData[] = [
-    { ...INITIAL_CARD_DATA, id: '1', name: 'Charizard', setNumber: '006/165', holoPattern: HoloPattern.Sheen, likes: 342, isLiked: false },
-    { 
-        ...INITIAL_CARD_DATA, 
-        id: '2',
-        name: 'Pikachu', 
-        type: ElementType.Lightning, 
-        hp: '60', 
-        subtype: Subtype.Basic,
-        evolvesFrom: undefined,
-        image: 'https://images.unsplash.com/photo-1606992523267-28df5283737b?q=80&w=1000&auto=format&fit=crop',
-        attacks: [{ id: 'a1', name: 'Electro Ball', cost: [ElementType.Lightning], damage: '30', description: '' }],
-        weakness: ElementType.Fighting,
-        setNumber: '025/165',
-        holoPattern: HoloPattern.None,
-        likes: 856,
-        isLiked: true
-    },
-    {
-        ...INITIAL_CARD_DATA,
-        id: '3',
-        name: 'Blastoise',
-        type: ElementType.Water,
-        hp: '330',
-        subtype: Subtype.Stage2,
-        image: 'https://images.unsplash.com/photo-1542887800-83f06e5d22f2?q=80&w=1000&auto=format&fit=crop',
-        attacks: [{ id: 'a1', name: 'Hydro Pump', cost: [ElementType.Water, ElementType.Water], damage: '180', description: '' }],
-        weakness: ElementType.Lightning,
-        setNumber: '009/165',
-        holoPattern: HoloPattern.Cosmos,
-        likes: 120,
-        isLiked: false
-    },
-    {
-        ...INITIAL_CARD_DATA,
-        id: '4',
-        supertype: Supertype.Trainer,
-        name: 'Professor Research',
-        trainerType: TrainerType.Supporter,
-        rules: ['Discard your hand and draw 7 cards.'],
-        image: 'https://images.unsplash.com/photo-1532188978303-453f5ce8a018?q=80&w=1000&auto=format&fit=crop',
-        setNumber: '100/165',
-        holoPattern: HoloPattern.None,
-        likes: 45,
-        isLiked: false
-    },
-     { ...INITIAL_CARD_DATA, id: '5', name: 'Charizard', subtype: Subtype.Stage2, hp: '330', setNumber: '223/165', holoPattern: HoloPattern.CrackedIce, likes: 2300, isLiked: false },
-     { ...INITIAL_CARD_DATA, id: '6', name: 'Mewtwo', type: ElementType.Psychic, hp: '130', subtype: Subtype.Basic, setNumber: '150/165', image: 'https://images.unsplash.com/photo-1618331835717-801e976710b2?q=80&w=1000&auto=format&fit=crop', holoPattern: HoloPattern.Starlight, likes: 890, isLiked: false }
-];
+import {
+  deleteCardFromServer,
+  fetchMyCards,
+  fetchFavoritedCards,
+  fetchPublicCards,
+  publishCardToServer,
+  saveCardToServer,
+  saveCardAppraisalToServer,
+  toggleCardLikeOnServer,
+  toggleCardFavoriteOnServer,
+  updateCardOnServer,
+} from './services/cardsService';
+import { applyCoinsToUser, rechargeCoins } from './services/walletService';
 
 // Helper for responsive scaling of the preview card in App layout
 const ResponsivePreviewContainer = ({ children }: { children?: React.ReactNode }) => {
@@ -160,15 +122,22 @@ const SignInRequiredView = ({ onLogin, t }: { onLogin: () => void, t: any }) => 
 
 function AppContent() {
   const [currentView, setCurrentView] = useState<'create' | 'browse' | 'cart' | 'profile' | 'arena' | 'appraiser' | 'recharge'>('create');
+  const [browseSection, setBrowseSection] = useState<'cards' | 'packs'>('cards');
+  const [isBrowseHeaderCollapsed, setIsBrowseHeaderCollapsed] = useState(false);
   const [cardData, setCardData] = useState<CardData>(INITIAL_CARD_DATA);
   const [cart, setCart] = useState<CardData[]>([]);
   
   // State for User Creations
-  const [myCards, setMyCards] = useState<CardData[]>([]); 
-  
+  const [myCards, setMyCards] = useState<CardData[]>([]);
+
   // State for Browse Feed
-  const [globalCards, setGlobalCards] = useState<CardData[]>(MOCK_CARDS_INITIAL); 
-  
+  const [globalCards, setGlobalCards] = useState<CardData[]>([]);
+
+  // State for Liked Cards (Favorites)
+  const [likedCards, setLikedCards] = useState<CardData[]>([]);
+  const [marketPacks, setMarketPacks] = useState(initialMarketPacks);
+  const [purchasedPacks, setPurchasedPacks] = useState<PurchasedPack[]>([]);
+
   // Login State
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [user, setUser] = useState<User | null>(null);
@@ -184,6 +153,7 @@ function AppContent() {
     options: ActionDialogOption[];
   } | null>(null);
   const { t } = useLanguage();
+  const isPublishedCard = (card: CardData) => Boolean(card.isPublic || card.status === 'published' || card.publishedAt);
 
   const refreshMyCards = async (targetUser?: User | null) => {
       const activeUser = targetUser ?? user;
@@ -197,6 +167,30 @@ function AppContent() {
           setMyCards(cards);
       } catch {
           setMyCards([]);
+      }
+  };
+
+  const refreshPublicCards = async () => {
+      try {
+          const { cards } = await fetchPublicCards({ page: 1, limit: 50, sort: 'trending' });
+          setGlobalCards(cards);
+      } catch {
+          setGlobalCards([]);
+      }
+  };
+
+  const refreshLikedCards = async (targetUser?: User | null) => {
+      const activeUser = targetUser ?? user;
+      if (!activeUser) {
+          setLikedCards([]);
+          return;
+      }
+
+      try {
+          const cards = await fetchFavoritedCards();
+          setLikedCards(cards);
+      } catch {
+          setLikedCards([]);
       }
   };
 
@@ -241,9 +235,7 @@ function AppContent() {
    *    }
    */
   useEffect(() => {
-      // [待删除 Mock]: const data = await fetch('/api/cards/public').then(res => res.json());
-      // setGlobalCards(data.data.list);
-      console.log("Fetching public cards...");
+      refreshPublicCards();
   }, []);
 
   // Check for active session on load
@@ -259,8 +251,19 @@ function AppContent() {
   useEffect(() => {
       if (currentView === 'profile' && user) {
           refreshMyCards();
+          refreshLikedCards();
       }
   }, [currentView, user]);
+
+  useEffect(() => {
+      if (currentView === 'browse') {
+          refreshPublicCards();
+      }
+  }, [currentView]);
+
+  useEffect(() => {
+      refreshPublicCards();
+  }, [user]);
 
   const addNotification = (type: 'success' | 'error' | 'info', message: string) => {
       const id = Date.now().toString();
@@ -470,9 +473,12 @@ function AppContent() {
           return;
       }
 
+      const targetCard = myCards.find(card => card.id === id);
+      const isPublished = targetCard ? isPublishedCard(targetCard) : false;
+
       openActionDialog({
           title: t('dialog.delete_card_title'),
-          description: t('dialog.delete_card_desc'),
+          description: isPublished ? t('dialog.delete_published_card_desc') : t('dialog.delete_card_desc'),
           options: [
               {
                   label: t('dialog.delete_confirm'),
@@ -481,6 +487,7 @@ function AppContent() {
                       try {
                           await deleteCardFromServer(id);
                           setMyCards(prev => prev.filter(c => c.id !== id));
+                          setGlobalCards(prev => prev.filter(c => c.id !== id));
                           if (cardData.id === id) {
                               setCardData(INITIAL_CARD_DATA);
                           }
@@ -513,21 +520,50 @@ function AppContent() {
    *      "newCount": number // 最新点赞数
    *    }
    */
-  const handleToggleLike = (cardId: string) => {
+  const handleToggleLike = async (cardId: string) => {
       if (!user) {
           handleLoginRequired();
           return;
       }
-      
-      // [待删除 Mock]
-      setGlobalCards(prev => prev.map(card => {
-          if (card.id === cardId) {
-              const isLiked = !card.isLiked;
-              const likes = (card.likes || 0) + (isLiked ? 1 : -1);
-              return { ...card, isLiked, likes };
-          }
-          return card;
-      }));
+
+      try {
+          // 点赞和收藏同时进行
+          const [likeResult] = await Promise.all([
+              toggleCardLikeOnServer(cardId),
+              toggleCardFavoriteOnServer(cardId)
+          ]);
+
+          setGlobalCards(prev => prev.map(card => (
+              card.id === cardId
+                  ? { ...card, isLiked: likeResult.liked, likes: likeResult.newCount }
+                  : card
+          )));
+
+          // Refresh favorited cards after toggling
+          refreshLikedCards();
+      } catch (error: any) {
+          addNotification('error', error.message || 'Failed to update like.');
+      }
+  };
+
+  const handleRemoveFavorite = async (cardId: string) => {
+      if (!user) {
+          handleLoginRequired();
+          return;
+      }
+
+      try {
+          await toggleCardFavoriteOnServer(cardId);
+          setLikedCards(prev => prev.filter(card => card.id !== cardId));
+          setGlobalCards(prev => prev.map(card => (
+              card.id === cardId
+                  ? { ...card, isFavorited: false }
+                  : card
+          )));
+          addNotification('info', t('msg.favorite_removed'));
+      } catch (error: any) {
+          addNotification('error', error.message || 'Failed to remove favorite.');
+      }
   };
 
   /**
@@ -538,16 +574,52 @@ function AppContent() {
    * 3. 数据库操作: UPDATE cards SET is_public = true WHERE id = :id AND user_id = :uid;
    * 4. 返回值: { "success": true }
    */
-  const handlePublishCard = (card: CardData) => {
+  const handlePublishCard = async (card: CardData) => {
       if (!user) {
           handleLoginRequired();
           return;
       }
-      
-      // [待删除 Mock]
-      const newGlobalCard = { ...card, id: Date.now().toString(), likes: 0, isLiked: false };
-      setGlobalCards(prev => [newGlobalCard, ...prev]);
-      addNotification('success', t('msg.published'));
+
+      if (!card.id) {
+          addNotification('error', 'Please save the card before publishing.');
+          return;
+      }
+
+      const nextIsPublic = !isPublishedCard(card);
+
+      const executePublishStateChange = async () => {
+          try {
+              const publishedCard = await publishCardToServer(card.id!, nextIsPublic);
+              setMyCards(prev => prev.map(existing => (
+                  existing.id === publishedCard.id
+                      ? { ...existing, ...publishedCard }
+                      : existing
+              )));
+              if (!nextIsPublic) {
+                  setGlobalCards(prev => prev.filter(existing => existing.id !== card.id));
+              }
+              await refreshPublicCards();
+              addNotification('success', nextIsPublic ? t('msg.published') : t('msg.card_unpublished'));
+          } catch (error: any) {
+              addNotification('error', error.message || (nextIsPublic ? 'Failed to publish card.' : 'Failed to unpublish card.'));
+          } finally {
+              closeActionDialog();
+          }
+      };
+
+      if (!nextIsPublic) {
+          openActionDialog({
+              title: t('dialog.unpublish_card_title'),
+              description: t('dialog.unpublish_card_desc'),
+              options: [
+                  { label: t('dialog.unpublish_confirm'), onClick: () => void executePublishStateChange(), variant: 'danger' },
+                  { label: t('dialog.keep_card'), onClick: closeActionDialog, variant: 'secondary' },
+              ],
+          });
+          return;
+      }
+
+      await executePublishStateChange();
   };
 
   const handleLoadCard = (card: CardData) => {
@@ -566,43 +638,15 @@ function AppContent() {
       setCurrentView('create');
   };
 
-  /**
-   * [后端接口规范] 消耗金币 (通用扣费)
-   * --------------------------------------------------------------
-   * 1. 接口方法: POST /api/wallet/spend
-   * 
-   * 2. 请求参数: 
-   *    { 
-   *      "amount": number, // 金额 (如 20)
-   *      "reason": string  // 用途 (如 "ai_appraisal", "ai_generate_image")
-   *    }
-   * 
-   * 3. 数据库交互 (事务 Transaction):
-   *    BEGIN;
-   *    SELECT coins FROM users WHERE id = :uid FOR UPDATE;
-   *    IF coins < amount THEN ROLLBACK; RETURN error;
-   *    UPDATE users SET coins = coins - amount WHERE id = :uid;
-   *    INSERT INTO transactions (user_id, amount, type, description) VALUES (:uid, -amount, 'DEBIT', :reason);
-   *    COMMIT;
-   * 
-   * 4. 返回值:
-   *    { "success": true, "newBalance": 980 }
-   */
-  const handleSpendCoins = async (amount: number): Promise<boolean> => {
-      if (!user || (user.coins || 0) < amount) {
-          addNotification('error', 'Not enough coins!');
-          return false;
-      }
-
-      try {
-          const nextCoins = await spendCoins(amount, 'ai_appraisal');
-          setUser(prev => applyCoinsToUser(prev, nextCoins));
-          addNotification('info', `Spent ${amount} coins.`);
-          return true;
-      } catch (error: any) {
-          addNotification('error', error.message || 'Failed to spend coins.');
-          return false;
-      }
+  const handleSaveCardAppraisal = async (
+      cardId: string,
+      appraisal: { price: string; comment: string; language: 'en' | 'zh-Hant' },
+  ): Promise<CardData> => {
+      const savedCard = await saveCardAppraisalToServer(cardId, appraisal);
+      setMyCards(prev => prev.map(card => (card.id === savedCard.id ? savedCard : card)));
+      setGlobalCards(prev => prev.map(card => (card.id === savedCard.id ? savedCard : card)));
+      setCardData(prev => (prev.id === savedCard.id ? savedCard : prev));
+      return savedCard;
   };
 
   const handleRecharge = async (amount: number): Promise<boolean> => {
@@ -617,6 +661,52 @@ function AppContent() {
           return false;
       }
   }
+
+  const handleOpenPackPreview = (pack: Omit<PurchasedPack, 'purchasedAt' | 'ownedCount'>) => {
+      setMarketPacks((prev) => prev.filter((item) => item.id !== pack.id));
+      setPurchasedPacks((prev) => {
+          const existing = prev.find((item) => item.id === pack.id);
+          if (existing) {
+              return prev.map((item) =>
+                  item.id === pack.id
+                      ? { ...item, ownedCount: item.ownedCount + 1, purchasedAt: new Date().toISOString() }
+                      : item,
+              );
+          }
+          return [
+              {
+                  ...pack,
+                  purchasedAt: new Date().toISOString(),
+                  ownedCount: 1,
+              },
+              ...prev,
+          ];
+      });
+      addNotification('success', `${pack.name} · ${t('packs.bought_success')}`);
+  };
+
+  const handleOpenPurchasedPack = (pack: PurchasedPack) => {
+      addNotification('info', `${pack.name} · ${t('packs.opening_soon')}`);
+  };
+
+  const browseTabs = [
+      {
+          key: 'cards' as const,
+          title: t('browse.tab_cards'),
+          description: t('browse.tab_cards_desc'),
+          icon: GlobeIcon,
+          activeClassName: 'border-cyan-300/35 bg-cyan-300/14 text-cyan-50 shadow-[0_16px_36px_rgba(34,211,238,0.16)]',
+          iconClassName: 'bg-cyan-300/18 text-cyan-100',
+      },
+      {
+          key: 'packs' as const,
+          title: t('browse.tab_packs'),
+          description: t('browse.tab_packs_desc'),
+          icon: SparklesIcon,
+          activeClassName: 'border-orange-300/35 bg-orange-300/14 text-orange-50 shadow-[0_16px_36px_rgba(251,146,60,0.18)]',
+          iconClassName: 'bg-orange-300/18 text-orange-100',
+      },
+  ];
 
   return (
     <div className="h-[100dvh] flex flex-col font-sans bg-[#020617] text-white overflow-hidden">
@@ -667,6 +757,7 @@ function AppContent() {
                   onAddToCart={addToCart}
                   onSave={handleSaveCard}
                   onPublish={handlePublishCard}
+                  onUpdateUserCoins={(coins) => setUser(prev => applyCoinsToUser(prev, coins))}
                   addNotification={addNotification}
                   user={user}
                   onLoginRequired={handleLoginRequired}
@@ -679,21 +770,106 @@ function AppContent() {
       )}
 
       {currentView === 'browse' && (
-          <Browse 
-            cards={globalCards}
-            user={user}
-            onToggleLike={handleToggleLike}
-            onAddToCart={(card) => {
-                if(!user) {
-                    handleLoginRequired();
-                    return;
-                }
-                addToCart(card);
-                addNotification('success', t('msg.added_cart'));
-            }}
-            onLoadCard={handleLoadCard}
-            onLoginRequired={handleLoginRequired}
-          />
+          <div className="flex flex-grow flex-col overflow-hidden bg-[#090b10]">
+            <div className={`border-b border-white/5 bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.08),transparent_22%),radial-gradient(circle_at_top_right,rgba(251,146,60,0.08),transparent_24%),linear-gradient(180deg,rgba(5,10,19,0.96)_0%,rgba(5,10,19,0.82)_100%)] px-3 backdrop-blur-xl transition-all duration-300 md:px-8 ${
+              isBrowseHeaderCollapsed ? 'py-3' : 'py-4 md:py-5'
+            }`}>
+              <div className="mx-auto max-w-[1400px]">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0 px-1">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-white/45">{t('browse.section_label')}</p>
+                    <h2 className="truncate text-lg font-black tracking-tight text-white md:text-xl">
+                      {isBrowseHeaderCollapsed ? t('browse.section_title_compact') : t('browse.section_title')}
+                    </h2>
+                  </div>
+                  <button
+                    onClick={() => setIsBrowseHeaderCollapsed((prev) => !prev)}
+                    className="shrink-0 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-200 transition-colors hover:bg-white/10 hover:text-white"
+                  >
+                    {isBrowseHeaderCollapsed ? t('browse.expand') : t('browse.collapse')}
+                  </button>
+                </div>
+
+                <div className={`grid gap-3 transition-all duration-300 ${isBrowseHeaderCollapsed ? 'md:grid-cols-[1fr]' : 'md:grid-cols-[1.1fr_1.4fr] md:items-end'}`}>
+                  {!isBrowseHeaderCollapsed && (
+                    <div className="space-y-2 px-1">
+                      <p className="max-w-xl text-sm leading-6 text-slate-400">{t('browse.section_desc')}</p>
+                    </div>
+                  )}
+
+                  <div className={`grid gap-3 ${isBrowseHeaderCollapsed ? 'md:grid-cols-2' : 'md:grid-cols-2'}`}>
+                    {browseTabs.map((tab) => {
+                      const Icon = tab.icon;
+                      const isActive = browseSection === tab.key;
+
+                      return (
+                        <button
+                          key={tab.key}
+                          onClick={() => setBrowseSection(tab.key)}
+                          className={`group rounded-[24px] border px-4 text-left transition-all duration-300 md:px-5 ${
+                            isBrowseHeaderCollapsed ? 'py-3' : 'py-4'
+                          } ${
+                            isActive
+                              ? `${tab.activeClassName} -translate-y-0.5`
+                              : 'border-white/10 bg-white/[0.04] text-slate-200 hover:border-white/20 hover:bg-white/[0.07]'
+                          }`}
+                        >
+                          <div className={`flex gap-4 ${isBrowseHeaderCollapsed ? 'items-center' : 'items-start'}`}>
+                            <div className={`flex shrink-0 items-center justify-center rounded-2xl border border-white/10 ${isActive ? tab.iconClassName : 'bg-white/6 text-white/75'} ${
+                              isBrowseHeaderCollapsed ? 'h-10 w-10' : 'h-11 w-11'
+                            }`}>
+                              <Icon className="h-5 w-5" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-black uppercase tracking-[0.18em]">{tab.title}</span>
+                                {isActive && (
+                                  <span className="rounded-full border border-white/15 bg-black/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em]">
+                                    Live
+                                  </span>
+                                )}
+                              </div>
+                              {!isBrowseHeaderCollapsed && (
+                                <p className={`mt-1 text-sm leading-6 ${isActive ? 'text-white/78' : 'text-slate-400 group-hover:text-slate-300'}`}>
+                                  {tab.description}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {browseSection === 'cards' ? (
+              <Browse 
+                cards={globalCards}
+                user={user}
+                onToggleLike={handleToggleLike}
+                addNotification={addNotification}
+                onAddToCart={(card) => {
+                    if(!user) {
+                        handleLoginRequired();
+                        return;
+                    }
+                    addToCart(card);
+                    addNotification('success', t('msg.added_cart'));
+                }}
+                onLoadCard={handleLoadCard}
+                onLoginRequired={handleLoginRequired}
+              />
+            ) : (
+              <PackBrowse
+                packs={marketPacks}
+                user={user}
+                onLoginRequired={handleLoginRequired}
+                onOpenPack={handleOpenPackPreview}
+              />
+            )}
+          </div>
       )}
 
       {currentView === 'cart' && (
@@ -707,12 +883,14 @@ function AppContent() {
       )}
 
       {currentView === 'profile' && (
-          <Profile 
-            user={user} 
+          <Profile
+            user={user}
             onLoginClick={() => setIsLoginOpen(true)}
             savedCards={myCards}
-            globalCards={globalCards}
-            onToggleLike={handleToggleLike}
+            likedCards={likedCards}
+            purchasedPacks={purchasedPacks}
+            onRemoveFavorite={handleRemoveFavorite}
+            onOpenPurchasedPack={handleOpenPurchasedPack}
             onPublishCard={handlePublishCard}
             onLoadCard={handleLoadCard}
             onCreateNew={handleCreateNew}
@@ -731,7 +909,9 @@ function AppContent() {
           <Appraiser
             user={user}
             myCards={myCards}
-            onSpendCoins={handleSpendCoins}
+            onUpdateUserCoins={(coins) => setUser(prev => applyCoinsToUser(prev, coins))}
+            onSaveAppraisal={handleSaveCardAppraisal}
+            addNotification={addNotification}
             onLoginRequired={handleLoginRequired}
           />
       )}

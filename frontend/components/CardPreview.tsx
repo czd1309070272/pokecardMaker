@@ -4,6 +4,8 @@ import { CardData, Supertype } from '../types';
 import { EnergyLayout } from './card-layouts/EnergyLayout';
 import { TrainerLayout } from './card-layouts/TrainerLayout';
 import { PokemonLayout } from './card-layouts/PokemonLayout';
+import { useLanguage } from '../contexts/LanguageContext';
+import { getRarityAuraTheme, getRarityBadgeTheme, getRarityFrameTheme, getRarityLabel } from '../lib/rarity';
 
 interface CardPreviewProps {
   data: CardData;
@@ -20,6 +22,15 @@ const ROOT_STYLE: CSSProperties = {
 };
 
 export const CardPreview: React.FC<CardPreviewProps> = ({ data, isGeneratingImage }) => {
+  const { language } = useLanguage();
+  const enableRarityVisual = data.supertype === Supertype.Pokemon;
+  const rarityAura = getRarityAuraTheme(data.rarity);
+  const rarityBadge = getRarityBadgeTheme(data.rarity);
+  const rarityFrame = getRarityFrameTheme(data.rarity);
+  const rarityLabel = getRarityLabel(data.rarity, language, { short: true });
+  const rarityBadgePositionClass =
+    data.supertype === Supertype.Pokemon ? 'top-[84px] right-3' : 'top-3 right-3';
+
   const renderLayout = () => {
       switch (data.supertype) {
           case Supertype.Energy:
@@ -61,6 +72,74 @@ export const CardPreview: React.FC<CardPreviewProps> = ({ data, isGeneratingImag
                 )}
                 
                 {renderLayout()}
+
+                {enableRarityVisual && rarityAura.enabled && (
+                  <>
+                    <div
+                      className="absolute inset-0 rounded-[24px] pointer-events-none z-[23]"
+                      style={{
+                        border: `2px solid ${rarityAura.borderColor}`,
+                        boxShadow: `${rarityAura.borderGlow}, inset 0 0 26px ${rarityAura.borderColor}`,
+                        opacity: 0.95,
+                      }}
+                    />
+                    <div
+                      className="absolute inset-0 rounded-[24px] pointer-events-none z-[24]"
+                      style={{
+                        border: `2px solid ${rarityAura.borderColor}`,
+                        boxShadow: `${rarityAura.borderGlow}, inset 0 0 34px ${rarityAura.borderColor}`,
+                        animation: `rarityAuraPulse ${rarityAura.pulseDuration} ease-in-out infinite`,
+                      }}
+                    />
+                  </>
+                )}
+
+                {enableRarityVisual && (
+                  <>
+                    <div
+                      className="absolute inset-0 rounded-[24px] pointer-events-none z-20"
+                      style={{
+                        border: `2px solid ${rarityFrame.outerBorderColor}`,
+                        boxShadow: rarityFrame.outerShadow,
+                      }}
+                    />
+                    <div
+                      className="absolute inset-[6px] rounded-[18px] pointer-events-none z-20"
+                      style={{
+                        border: `1px solid ${rarityFrame.innerBorderColor}`,
+                        boxShadow: rarityFrame.innerShadow,
+                      }}
+                    />
+                  </>
+                )}
+
+                {enableRarityVisual && (
+                  <div
+                    className={`absolute ${rarityBadgePositionClass} z-30 inline-flex min-h-[28px] items-center justify-center rounded-full border px-3 py-1 shadow-xl whitespace-nowrap`}
+                    style={{
+                      background: rarityBadge.background,
+                      color: rarityBadge.textColor,
+                      borderColor: rarityBadge.borderColor,
+                      boxShadow: rarityBadge.glow,
+                      textShadow: '0 1px 2px rgba(0, 0, 0, 0.45)',
+                      fontSize: '10px',
+                      fontWeight: 900,
+                      letterSpacing: language === 'en' ? '0.08em' : '0.02em',
+                      lineHeight: 1,
+                    }}
+                  >
+                    {rarityLabel}
+                  </div>
+                )}
+
+                {enableRarityVisual && rarityAura.enabled && (
+                  <style>{`
+                    @keyframes rarityAuraPulse {
+                      0%, 100% { opacity: 0.72; transform: scale(0.999); filter: brightness(1.05) saturate(1.1); }
+                      50% { opacity: 1; transform: scale(1.004); filter: brightness(1.38) saturate(1.45); }
+                    }
+                  `}</style>
+                )}
                 
             </div>
         </div>
